@@ -59,12 +59,40 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.logo-title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 .logo-title {
   font-family: 'Noto Sans KR', serif;
-  font-size: 20px;
+  font-size: 15px;
   color: var(--ink);
   letter-spacing: -0.4px;
+  cursor: pointer;
+  flex: 1;
+  line-height: 1.4;
 }
+
+.logo-title:hover { color: var(--accent); }
+
+.logo-edit-btn {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink3);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 3px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.12s;
+  margin-top: 2px;
+}
+
+.sidebar-logo:hover .logo-edit-btn { opacity: 1; }
+.logo-edit-btn:hover { color: var(--accent); }
 
 .logo-sub {
   font-family: 'DM Mono', monospace;
@@ -116,6 +144,41 @@ body {
 }
 
 .sidebar-spacer { flex: 1; }
+
+.dday-badge-clickable {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.dday-badge-clickable:hover { background: var(--surface2); }
+
+.btn-settings {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  background: transparent;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--ink3);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.btn-settings:hover { background: var(--surface2); color: var(--ink); }
+
+.settings-divider {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  padding: 4px 0 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
 
 .sidebar-copyright {
   font-family: 'DM Mono', monospace;

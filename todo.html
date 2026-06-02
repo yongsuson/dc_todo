@@ -17,7 +17,10 @@
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-logo">
-      <div class="logo-title">용수야 뭐 빼먹은 건 없냐?</div>
+      <div class="logo-title-wrap">
+        <div class="logo-title" id="logo-title" onclick="editLogoTitle()" title="클릭해서 수정"></div>
+        <button class="logo-edit-btn" onclick="editLogoTitle()" title="제목 수정"><i class="ti ti-pencil"></i></button>
+      </div>
       <div class="logo-sub" id="sb-date"></div>
     </div>
 
@@ -45,9 +48,12 @@
     <div class="sidebar-copyright">© 신림동나무늘보</div>
 
     <div class="sidebar-footer">
-      <div class="dday-badge" id="sb-dday"></div>
-      <div class="dday-badge" id="sb-payday"></div>
+      <div class="dday-badge dday-badge-clickable" id="sb-dday" onclick="openSettings()" title="설정"></div>
+      <div class="dday-badge dday-badge-clickable" id="sb-payday" onclick="openSettings()" title="설정"></div>
       <div class="today-badge" id="sb-stats"></div>
+      <button class="btn-settings" onclick="openSettings()" title="설정">
+        <i class="ti ti-settings"></i> 설정
+      </button>
     </div>
   </aside>
 
@@ -208,6 +214,35 @@
         <div id="search-out"></div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal" onclick="closeSettings(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ti ti-settings" style="margin-right:6px"></i>설정</span>
+      <button class="modal-close" onclick="closeSettings()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-label">앱 제목</label>
+        <input class="form-input" type="text" id="cfg-title" placeholder="용수야 뭐 빼먹은 건 없냐?">
+      </div>
+      <div class="settings-divider">D-day 설정</div>
+      <div class="form-row">
+        <label class="form-label">입사 일자</label>
+        <input class="form-input" type="date" id="cfg-join-date">
+      </div>
+      <div class="form-row">
+        <label class="form-label">월급일 <span style="color:var(--ink3);font-weight:400">(매월 몇 일)</span></label>
+        <input class="form-input" type="number" id="cfg-payday" min="1" max="31" placeholder="25">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeSettings()">취소</button>
+      <button class="btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> 저장</button>
     </div>
   </div>
 </div>

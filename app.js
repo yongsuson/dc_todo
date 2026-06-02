@@ -76,32 +76,84 @@ function focusQuickAdd() {
   setTimeout(() => document.getElementById('qa-text')?.focus(), 80);
 }
 
-// ── SIDEBAR INFO ──────────────────────────────────────
-const JOIN_DATE = new Date('2026-05-26');
+// ── SETTINGS (localStorage) ───────────────────────────
+const SETTINGS_KEY = 'dc_todo_settings';
 
-function calcDday() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const start = new Date(JOIN_DATE);
-  start.setHours(0, 0, 0, 0);
-  return Math.floor((today - start) / (1000 * 60 * 60 * 24));
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { return {}; }
 }
 
+function getConfig() {
+  const s = loadSettings();
+  return {
+    title:    s.title    || '할 일을 관리해보세요',
+    joinDate: s.joinDate || '',
+    payday:   s.payday   != null ? Number(s.payday) : 25,
+  };
+}
+
+function openSettings() {
+  const c = getConfig();
+  document.getElementById('cfg-title').value     = c.title;
+  document.getElementById('cfg-join-date').value = c.joinDate;
+  document.getElementById('cfg-payday').value    = c.payday;
+  document.getElementById('settings-modal').classList.add('open');
+  setTimeout(() => document.getElementById('cfg-title').focus(), 80);
+}
+
+function closeSettings(e) {
+  if (e && e.target !== document.getElementById('settings-modal')) return;
+  document.getElementById('settings-modal').classList.remove('open');
+}
+
+function saveSettings() {
+  const title    = document.getElementById('cfg-title').value.trim();
+  const joinDate = document.getElementById('cfg-join-date').value;
+  const payday   = parseInt(document.getElementById('cfg-payday').value) || 25;
+  if (payday < 1 || payday > 31) { showToast('월급일은 1~31 사이로 입력해주세요'); return; }
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ title, joinDate, payday }));
+  document.getElementById('settings-modal').classList.remove('open');
+  applyTitle();
+  updateSidebar();
+  showToast('✅ 설정이 저장됐어요');
+}
+
+function applyTitle() {
+  const { title } = getConfig();
+  document.getElementById('logo-title').textContent = title;
+}
+
+function editLogoTitle() {
+  openSettings();
+  setTimeout(() => document.getElementById('cfg-title').select(), 120);
+}
+
+// ── SIDEBAR INFO ──────────────────────────────────────
 function updateSidebar() {
   const d = new Date();
   document.getElementById('sb-date').textContent =
     `${d.getFullYear()}.${p2(d.getMonth()+1)}.${p2(d.getDate())} ${DAYS[d.getDay()]}`;
 
-  const dday = calcDday();
-  document.getElementById('sb-dday').innerHTML =
-    `<span class="dday-num">D+${dday}</span>입사 ${dday}일째`;
+  const { joinDate, payday } = getConfig();
+  const today = new Date(); today.setHours(0,0,0,0);
 
-  const today2 = new Date(); today2.setHours(0,0,0,0);
-  let payday = new Date(today2.getFullYear(), today2.getMonth(), 25);
-  if (payday <= today2) payday = new Date(today2.getFullYear(), today2.getMonth() + 1, 25);
-  const daysLeft = Math.ceil((payday - today2) / (1000 * 60 * 60 * 24));
+  // 입사 D+day
+  if (joinDate) {
+    const start = new Date(joinDate); start.setHours(0,0,0,0);
+    const dday = Math.floor((today - start) / (1000*60*60*24));
+    document.getElementById('sb-dday').innerHTML =
+      `<span class="dday-num">D+${dday}</span>입사 ${dday}일째`;
+    document.getElementById('sb-dday').style.display = '';
+  } else {
+    document.getElementById('sb-dday').style.display = 'none';
+  }
+
+  // 월급 D-day
+  let next = new Date(today.getFullYear(), today.getMonth(), payday);
+  if (next <= today) next = new Date(today.getFullYear(), today.getMonth()+1, payday);
+  const daysLeft = Math.ceil((next - today) / (1000*60*60*24));
   document.getElementById('sb-payday').innerHTML =
-    `<span class="dday-num" style="color:#e06baf">D-${daysLeft}</span>다음 월급까지`;
+    `<span class="dday-num" style="color:#e06baf">D-${daysLeft}</span>다음 월급까지 (${payday}일)`;
 
   const todos = _allTodos;
   const done = todos.filter(t => t.status === 'done').length;
@@ -1180,6 +1232,7 @@ async function deleteProcedure(id, name) {
 }
 
 // ── INIT ──────────────────────────────────────────────
+applyTitle();
 updateSidebar();
 renderBoard();
 setInterval(updateSidebar, 60000);

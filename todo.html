@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>To do list</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-title">용수야 뭐 빼먹은 건 없냐?</div>
+      <div class="logo-sub" id="sb-date"></div>
+    </div>
+
+    <div class="sidebar-section">메뉴</div>
+    <button class="nav-item active" onclick="goPage('board')">
+      <i class="ti ti-layout-kanban"></i> 보드
+    </button>
+    <button class="nav-item" onclick="goPage('calendar')">
+      <i class="ti ti-calendar"></i> 캘린더
+    </button>
+    <button class="nav-item" onclick="goPage('search')">
+      <i class="ti ti-search"></i> 검색 / 기록
+    </button>
+    <button class="nav-item" onclick="goPage('contacts')">
+      <i class="ti ti-address-book"></i> 주소록
+    </button>
+    <button class="nav-item" onclick="goPage('mail')">
+      <i class="ti ti-mail"></i> 메일 포맷
+    </button>
+    <button class="nav-item" onclick="goPage('sop')">
+      <i class="ti ti-list-numbers"></i> 업무 순서
+    </button>
+
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-copyright">© 신림동나무늘보</div>
+
+    <div class="sidebar-footer">
+      <div class="dday-badge" id="sb-dday"></div>
+      <div class="dday-badge" id="sb-payday"></div>
+      <div class="today-badge" id="sb-stats"></div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="page-title" id="page-title">보드</div>
+      <div class="topbar-right">
+        <button class="btn-icon" onclick="goPage('search')" title="검색">
+          <i class="ti ti-search"></i>
+        </button>
+        <button class="btn-icon" title="새 할 일 추가" onclick="focusQuickAdd()">
+          <i class="ti ti-plus"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- BOARD PAGE -->
+      <div class="page-view active" id="page-board">
+
+        <div class="stats-grid" id="stats-grid"></div>
+
+        <div class="quick-add">
+          <i class="ti ti-plus" style="color:var(--ink3);font-size:16px;flex-shrink:0"></i>
+          <input type="text" id="qa-text" placeholder="새 할 일을 입력하세요..." autocomplete="off">
+          <input type="date" id="qa-date">
+          <input type="time" id="qa-time">
+          <button class="btn-primary" onclick="addTodo()">
+            <i class="ti ti-plus"></i> 추가
+          </button>
+        </div>
+
+        <div class="kanban">
+          <div class="col-todo">
+            <div class="col-header">
+              <span class="status-dot todo"></span>
+              <span class="col-label">할 일</span>
+              <span class="col-count" id="cnt-todo">0</span>
+            </div>
+            <div class="drop-zone" id="zone-todo" 
+              ondragover="onDragOver(event,'todo')" 
+              ondragleave="onDragLeave(event)" 
+              ondrop="onDrop(event,'todo')">
+            </div>
+          </div>
+
+          <div class="col-wip">
+            <div class="col-header">
+              <span class="status-dot wip"></span>
+              <span class="col-label">진행 중</span>
+              <span class="col-count" id="cnt-wip">0</span>
+            </div>
+            <div class="drop-zone" id="zone-wip"
+              ondragover="onDragOver(event,'wip')"
+              ondragleave="onDragLeave(event)"
+              ondrop="onDrop(event,'wip')">
+            </div>
+          </div>
+
+          <div class="col-done">
+            <div class="col-header">
+              <span class="status-dot done"></span>
+              <span class="col-label">완료</span>
+              <span class="col-count" id="cnt-done">0</span>
+            </div>
+            <div class="drop-zone" id="zone-done"
+              ondragover="onDragOver(event,'done')"
+              ondragleave="onDragLeave(event)"
+              ondrop="onDrop(event,'done')">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CALENDAR PAGE -->
+      <div class="page-view" id="page-calendar">
+        <div class="cal-wrap">
+          <div class="cal-nav-bar">
+            <span class="cal-month-label" id="cal-label"></span>
+            <div class="cal-nav-btns">
+              <button class="btn-nav" onclick="calMove(-1)"><i class="ti ti-chevron-left"></i></button>
+              <button class="btn-nav" onclick="calNow()"><i class="ti ti-point"></i></button>
+              <button class="btn-nav" onclick="calMove(1)"><i class="ti ti-chevron-right"></i></button>
+            </div>
+          </div>
+          <div class="cal-grid-wrapper">
+            <div id="cal-dh" style="display:contents"></div>
+            <div id="cal-grid" style="display:contents"></div>
+          </div>
+          <div class="cal-detail" id="cal-detail"></div>
+        </div>
+      </div>
+
+      <!-- CONTACTS PAGE -->
+      <div class="page-view" id="page-contacts">
+        <div class="contacts-toolbar">
+          <div class="contacts-search-wrap">
+            <i class="ti ti-search"></i>
+            <input type="text" id="ct-search" placeholder="이름, 소속, 직급, 이메일, 연락처 검색..." oninput="renderContacts()">
+          </div>
+          <button class="btn-primary" onclick="openContactModal()">
+            <i class="ti ti-user-plus"></i> 새 연락처
+          </button>
+        </div>
+        <div id="contacts-grid"></div>
+      </div>
+
+      <!-- MAIL TEMPLATES PAGE -->
+      <div class="page-view" id="page-mail">
+        <div class="contacts-toolbar">
+          <div class="contacts-search-wrap">
+            <i class="ti ti-search"></i>
+            <input type="text" id="mail-search" placeholder="제목, 수신자, 내용 검색..." oninput="renderMailTemplates()">
+          </div>
+          <button class="btn-primary" onclick="openMailModal()">
+            <i class="ti ti-plus"></i> 새 포맷
+          </button>
+        </div>
+        <div id="mail-grid" class="template-grid"></div>
+      </div>
+
+      <!-- SOP PAGE -->
+      <div class="page-view" id="page-sop">
+        <div class="contacts-toolbar">
+          <div class="contacts-search-wrap">
+            <i class="ti ti-search"></i>
+            <input type="text" id="sop-search" placeholder="업무명, 카테고리 검색..." oninput="renderProcedures()">
+          </div>
+          <button class="btn-primary" onclick="openSopModal()">
+            <i class="ti ti-plus"></i> 새 업무 순서
+          </button>
+        </div>
+        <div id="sop-grid" class="template-grid"></div>
+      </div>
+
+      <!-- SEARCH PAGE -->
+      <div class="page-view" id="page-search">
+        <div class="search-bar">
+          <i class="ti ti-search"></i>
+          <input type="text" id="s-input" placeholder="할 일 내용, 날짜(YYYY-MM-DD), 시간 검색..." oninput="doSearch()">
+        </div>
+        <div class="search-filters">
+          <button class="filter-chip active" data-filter="all" onclick="setFilter('all')">
+            <i class="ti ti-list"></i> 전체
+          </button>
+          <button class="filter-chip" data-filter="todo" onclick="setFilter('todo')">
+            <span class="status-dot todo" style="margin:0"></span> 할 일
+          </button>
+          <button class="filter-chip" data-filter="wip" onclick="setFilter('wip')">
+            <span class="status-dot wip" style="margin:0"></span> 진행 중
+          </button>
+          <button class="filter-chip" data-filter="done" onclick="setFilter('done')">
+            <span class="status-dot done" style="margin:0"></span> 완료
+          </button>
+        </div>
+        <div id="search-out"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- TODO EDIT MODAL -->
+<div class="modal-overlay" id="todo-edit-modal" onclick="closeTodoEditModal(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">할 일 수정</span>
+      <button class="modal-close" onclick="closeTodoEditModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="todo-edit-id">
+      <div class="form-row">
+        <label class="form-label">내용 <span class="required">*</span></label>
+        <textarea class="form-input form-textarea" id="todo-edit-text" rows="3"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeTodoEditModal()">취소</button>
+      <button class="btn-primary" onclick="saveTodoEdit()"><i class="ti ti-check"></i> 수정 완료</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIL VIEW MODAL -->
+<div class="modal-overlay" id="mail-view-modal" onclick="closeMailViewModal(event)">
+  <div class="modal-box modal-box-wide">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="mail-view-title"></div>
+        <div id="mail-view-recipients" style="font-size:12px;color:var(--ink3);margin-top:3px"></div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-ghost" style="height:30px;font-size:12px;padding:0 10px" onclick="copyMailBodyFromView()"><i class="ti ti-copy"></i> 복사</button>
+        <button class="modal-close" onclick="closeMailViewModal()"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div id="mail-view-subject-wrap" class="tpl-subject" style="margin-bottom:0"></div>
+      <div id="mail-view-body" class="mail-view-body"></div>
+      <div id="mail-view-memo-wrap" class="tpl-memo" style="display:none"><i class="ti ti-info-circle"></i> <span id="mail-view-memo"></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIL TEMPLATE MODAL -->
+<div class="modal-overlay" id="mail-modal" onclick="closeMailModal(event)">
+  <div class="modal-box modal-box-wide">
+    <div class="modal-header">
+      <span class="modal-title" id="mail-modal-title">새 메일 포맷</span>
+      <button class="modal-close" onclick="closeMailModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="mail-id">
+      <div class="form-row">
+        <label class="form-label">포맷 이름 <span class="required">*</span></label>
+        <input class="form-input" type="text" id="mail-title" placeholder="예) 회의 결과 보고, 외부 문의 회신">
+      </div>
+      <div class="form-row two-col">
+        <div>
+          <label class="form-label">수신자 유형</label>
+          <input class="form-input" type="text" id="mail-recipients" placeholder="예) 팀장님, 거래처, 전체">
+        </div>
+        <div>
+          <label class="form-label">제목 템플릿</label>
+          <input class="form-input" type="text" id="mail-subject" placeholder="예) [보고] {내용} 관련">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">본문 템플릿</label>
+        <textarea class="form-input form-textarea form-textarea-lg" id="mail-body" placeholder="안녕하세요, {이름}입니다.&#10;&#10;{내용}&#10;&#10;감사합니다."></textarea>
+      </div>
+      <div class="form-row">
+        <label class="form-label">메모</label>
+        <input class="form-input" type="text" id="mail-memo" placeholder="이 포맷 사용 시 참고사항...">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeMailModal()">취소</button>
+      <button class="btn-primary" onclick="saveMailTemplate()"><i class="ti ti-check"></i> 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- SOP MODAL -->
+<div class="modal-overlay" id="sop-modal">
+  <div class="modal-box modal-box-wide">
+    <div class="modal-header">
+      <span class="modal-title" id="sop-modal-title">새 업무 순서</span>
+      <button class="modal-close" onclick="closeSopModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="sop-id">
+      <div class="form-row two-col">
+        <div>
+          <label class="form-label">업무명 <span class="required">*</span></label>
+          <input class="form-input" type="text" id="sop-title" placeholder="예) 월간 보고서 작성">
+        </div>
+        <div>
+          <label class="form-label">카테고리</label>
+          <input class="form-input" type="text" id="sop-category" placeholder="예) 보고, 정산, 회의">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">진행 단계</label>
+        <div id="sop-steps-list" class="steps-list"></div>
+        <button class="btn-add-step" onclick="addSopStep()">
+          <i class="ti ti-plus"></i> 단계 추가
+        </button>
+      </div>
+      <div class="form-row">
+        <label class="form-label">메모</label>
+        <input class="form-input" type="text" id="sop-memo" placeholder="전체 업무 관련 메모...">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeSopModal()">취소</button>
+      <button class="btn-primary" onclick="saveProcedure()"><i class="ti ti-check"></i> 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONTACT MODAL -->
+<div class="modal-overlay" id="contact-modal" onclick="closeContactModal(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">새 연락처</span>
+      <button class="modal-close" onclick="closeContactModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ct-id">
+      <div class="form-row">
+        <label class="form-label">이름 <span class="required">*</span></label>
+        <input class="form-input" type="text" id="ct-name" placeholder="홍길동">
+      </div>
+      <div class="form-row two-col">
+        <div>
+          <label class="form-label">소속</label>
+          <input class="form-input" type="text" id="ct-org" placeholder="회사 / 기관명">
+        </div>
+        <div>
+          <label class="form-label">직급</label>
+          <input class="form-input" type="text" id="ct-title" placeholder="직급 / 직책">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">이메일</label>
+        <input class="form-input" type="email" id="ct-email" placeholder="example@email.com">
+      </div>
+      <div class="form-row">
+        <label class="form-label">연락처</label>
+        <input class="form-input" type="tel" id="ct-phone" placeholder="010-0000-0000">
+      </div>
+      <div class="form-row">
+        <label class="form-label">메모</label>
+        <textarea class="form-input form-textarea" id="ct-memo" placeholder="추가 메모..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeContactModal()">취소</button>
+      <button class="btn-primary" onclick="saveContact()"><i class="ti ti-check"></i> 저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+
+</body>
+</html>

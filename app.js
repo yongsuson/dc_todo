@@ -570,7 +570,7 @@ async function renderCalendar() {
       <div class="cal-todo-chips">${chips}</div>
       ${more}
     `;
-    cell.onclick = () => { calSel = ds; renderCalendar(); };
+    cell.onclick = () => { calSel = ds; openCalDayModal(ds); };
     grid.appendChild(cell);
   }
 
@@ -649,6 +649,99 @@ async function deleteCalItem(id) {
     showToast('삭제되었어요');
   } catch(e) { showToast('삭제 실패: ' + e.message); }
 }
+
+// ── 캘린더 날짜 상세 모달 ─────────────────────────────
+function openCalDayModal(ds) {
+  calSel = ds;
+  const todos = _allTodos.filter(t => t.date === ds)
+    .sort((a,b) => (a.time||'').localeCompare(b.time||''));
+  const holidayName = getHolidayName(ds);
+
+  document.getElementById('cal-day-modal-title').textContent = fmtDateKR(ds);
+  document.getElementById('cal-day-modal-holiday').textContent = holidayName || '';
+  document.getElementById('cal-day-modal-count').textContent = `${todos.length}개`;
+  document.getElementById('cal-modal-qa-text').value = '';
+  document.getElementById('cal-modal-qa-time').value = '';
+
+  renderCalDayModalList(todos);
+  document.getElementById('cal-day-modal').classList.add('open');
+  setTimeout(() => document.getElementById('cal-modal-qa-text').focus(), 80);
+}
+
+function renderCalDayModalList(todos) {
+  const list = document.getElementById('cal-day-modal-list');
+  if (todos.length === 0) {
+    list.innerHTML = `<div class="empty-full" style="padding:1.5rem 0">
+      <i class="ti ti-calendar-off" style="font-size:28px;opacity:0.25;display:block;margin-bottom:8px"></i>
+      <p>이 날은 할 일이 없어요</p>
+    </div>`;
+    return;
+  }
+  list.innerHTML = '';
+  todos.forEach(t => {
+    const item = document.createElement('div');
+    item.className = 'cal-detail-item';
+    item.innerHTML = `
+      <span class="status-dot ${t.status}"></span>
+      <span class="cal-detail-text">${escHtml(t.text)}</span>
+      <span class="status-badge ${t.status}">${STATUS_KR[t.status]}</span>
+      ${t.time ? `<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);flex-shrink:0">${t.time}</span>` : ''}
+      <button onclick="deleteCalModalItem('${t.id}')"
+        style="margin-left:4px;border:none;background:transparent;cursor:pointer;color:var(--ink3);font-size:13px;padding:2px 4px;border-radius:4px;line-height:1;flex-shrink:0"
+        title="삭제"><i class="ti ti-trash"></i></button>
+    `;
+    list.appendChild(item);
+  });
+}
+
+function closeCalDayModal(e) {
+  if (e && e.target !== document.getElementById('cal-day-modal')) return;
+  document.getElementById('cal-day-modal').classList.remove('open');
+  renderCalendar();
+}
+
+async function addTodoCalModal() {
+  const textEl = document.getElementById('cal-modal-qa-text');
+  const timeEl = document.getElementById('cal-modal-qa-time');
+  const text = textEl.value.trim();
+  if (!text) { textEl.focus(); return; }
+  try {
+    await apiPost('/todos', {
+      text,
+      date: calSel,
+      time: timeEl.value || nowTime(),
+      status: 'todo',
+      priority: 'medium'
+    });
+    textEl.value = '';
+    timeEl.value = '';
+    // 목록 새로고침 (모달 유지)
+    _allTodos = await apiGet('/todos');
+    const todos = _allTodos.filter(t => t.date === calSel)
+      .sort((a,b) => (a.time||'').localeCompare(b.time||''));
+    document.getElementById('cal-day-modal-count').textContent = `${todos.length}개`;
+    renderCalDayModalList(todos);
+    textEl.focus();
+    showToast('할 일이 추가됐어요');
+  } catch(e) { showToast('저장 실패: ' + e.message); }
+}
+
+async function deleteCalModalItem(id) {
+  try {
+    await apiDelete('/todos/' + id);
+    _allTodos = await apiGet('/todos');
+    const todos = _allTodos.filter(t => t.date === calSel)
+      .sort((a,b) => (a.time||'').localeCompare(b.time||''));
+    document.getElementById('cal-day-modal-count').textContent = `${todos.length}개`;
+    renderCalDayModalList(todos);
+    showToast('삭제됐어요');
+  } catch(e) { showToast('삭제 실패: ' + e.message); }
+}
+
+// 모달에서도 Enter 추가 지원
+document.getElementById('cal-modal-qa-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addTodoCalModal();
+});
 
 function calMove(dir) {
   calM += dir;

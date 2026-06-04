@@ -1,5 +1,31 @@
+# 데이터베이스 (개인 데이터 포함)
 todo.db
 *.db-shm
 *.db-wal
+
+# Python 캐시
 __pycache__/
 *.pyc
+*.pyo
+
+# 실행 파일
+*.exe
+
+# 환경변수 / 시크릿
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+
+# Claude Code 내부 설정
+.claude/
+
+# OS 파일
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 에디터
+.vscode/
+.idea/

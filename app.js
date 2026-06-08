@@ -51,9 +51,145 @@ calY = now.getFullYear(); calM = now.getMonth(); calSel = todayStr();
 let searchFilter = 'all';
 let dragId = null;
 let _allTodos = [];  // 캐시
+let _clients = [];   // 고객사 캐시
+
+async function loadClients() {
+  try {
+    _clients = await apiGet('/clients');
+    // 퀵애드 셀렉트 채우기
+    const sel = document.getElementById('qa-client');
+    sel.innerHTML = '<option value="">고객사 없음</option>';
+    _clients.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+function getClient(clientId) {
+  return _clients.find(c => c.id === clientId) || null;
+}
+
+// ── CLIENT MANAGER ────────────────────────────────────
+function openClientManager() {
+  renderClientList();
+  document.getElementById('client-modal').classList.add('open');
+  setTimeout(() => document.getElementById('new-client-name').focus(), 80);
+}
+
+function closeClientManager(e) {
+  if (e && e.target !== document.getElementById('client-modal')) return;
+  document.getElementById('client-modal').classList.remove('open');
+}
+
+function renderClientList() {
+  const list = document.getElementById('client-list');
+  if (_clients.length === 0) {
+    list.innerHTML = `<div style="text-align:center;color:var(--ink3);font-size:12.5px;padding:1rem">등록된 고객사가 없어요</div>`;
+    return;
+  }
+  list.innerHTML = _clients.map(c => {
+    const count = _allTodos.filter(t => t.client_id === c.id).length;
+    return `
+      <div class="client-row" data-id="${c.id}">
+        <input type="color" class="client-color-input" value="${c.color}"
+          onchange="updateClientColor('${c.id}', this.value)" title="색상 변경">
+        <input class="client-name-input" type="text" value="${escHtml(c.name)}"
+          onchange="updateClientName('${c.id}', this.value)">
+        <span class="client-count">${count}건</span>
+        <button class="card-btn del" onclick="deleteClient('${c.id}','${escHtml(c.name)}', ${count})" title="삭제">
+          <i class="ti ti-trash"></i>
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function addClient() {
+  const nameEl = document.getElementById('new-client-name');
+  const colorEl = document.getElementById('new-client-color');
+  const name = nameEl.value.trim();
+  if (!name) { nameEl.focus(); return; }
+  try {
+    await apiPost('/clients', { name, color: colorEl.value });
+    nameEl.value = '';
+    await loadClients();
+    renderClientList();
+    showToast('고객사가 추가됐어요');
+  } catch(e) {
+    showToast(e.message.includes('이미') ? '이미 존재하는 고객사예요' : '추가 실패: ' + e.message);
+  }
+}
+
+async function updateClientName(id, name) {
+  name = name.trim();
+  if (!name) { renderClientList(); return; }
+  try {
+    await apiPut('/clients/' + id, { name });
+    await loadClients();
+    showToast('수정됐어요');
+  } catch(e) { showToast('수정 실패: ' + e.message); renderClientList(); }
+}
+
+async function updateClientColor(id, color) {
+  try {
+    await apiPut('/clients/' + id, { color });
+    await loadClients();
+  } catch(e) { showToast('수정 실패: ' + e.message); }
+}
+
+async function deleteClient(id, name, count) {
+  const warn = count > 0
+    ? `"${name}" 고객사를 삭제할까요?\n연결된 업무 ${count}건은 '고객사 없음'으로 바뀌어요.`
+    : `"${name}" 고객사를 삭제할까요?`;
+  if (!confirm(warn)) return;
+  try {
+    await apiDelete('/clients/' + id);
+    await loadClients();
+    renderClientList();
+    if (document.getElementById('page-board').classList.contains('active')) renderBoard();
+    showToast('삭제됐어요');
+  } catch(e) { showToast('삭제 실패: ' + e.message); }
+}
+
+document.getElementById('new-client-name')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') addClient();
+});
+
+// [ClientName] 태그 파싱 → { text, clientId }
+function parseClientTag(raw) {
+  const match = raw.match(/\[([^\]]+)\]/);
+  if (!match) return { text: raw.trim(), clientId: null };
+  const name = match[1].trim();
+  const client = _clients.find(c => c.name.toLowerCase() === name.toLowerCase());
+  if (!client) return { text: raw.trim(), clientId: null };
+  const cleaned = raw.replace(match[0], '').trim();
+  return { text: cleaned, clientId: client.id };
+}
+
+// 입력 중 [Tag] 감지 → 셀렉트 자동 반영
+function onQaInput() {
+  const raw = document.getElementById('qa-text').value;
+  const { clientId } = parseClientTag(raw);
+  const sel = document.getElementById('qa-client');
+  if (clientId) sel.value = clientId;
+}
+
+function onDailyQaInput() {
+  const raw = document.getElementById('daily-qa-text').value;
+  const { clientId } = parseClientTag(raw);
+  const preview = document.getElementById('daily-client-preview');
+  if (!preview) return;
+  const client = clientId ? getClient(clientId) : null;
+  preview.innerHTML = client
+    ? `<span class="card-client-badge" style="background:${client.color}22;color:${client.color};border:1px solid ${client.color}55">${client.name}</span>`
+    : '';
+}
 
 // ── NAVIGATION ────────────────────────────────────────
-const PAGES = { board: '보드', calendar: '캘린더', search: '검색 / 기록', contacts: '주소록', mail: '메일 포맷', sop: '업무 순서' };
+const PAGES = { board: '보드', calendar: '캘린더', search: '검색 / 기록', contacts: '주소록', mail: '메일 포맷', sop: '업무 순서', report: '리포트' };
 
 function goPage(name) {
   document.querySelectorAll('.page-view').forEach(v => v.classList.remove('active'));
@@ -69,6 +205,7 @@ function goPage(name) {
   if (name === 'contacts') renderContacts();
   if (name === 'mail') renderMailTemplates();
   if (name === 'sop') renderProcedures();
+  if (name === 'report') renderReport();
 }
 
 function focusQuickAdd() {
@@ -173,15 +310,19 @@ async function addTodo() {
   const textEl = document.getElementById('qa-text');
   const dateEl = document.getElementById('qa-date');
   const timeEl = document.getElementById('qa-time');
-  const text = textEl.value.trim();
-  if (!text) { textEl.focus(); return; }
+  const raw = textEl.value.trim();
+  if (!raw) { textEl.focus(); return; }
+  const { text, clientId: tagClientId } = parseClientTag(raw);
+  const clientEl = document.getElementById('qa-client');
+  const clientId = tagClientId || clientEl?.value || null;
   try {
     await apiPost('/todos', {
       text,
       date: dateEl.value || todayStr(),
       time: timeEl.value || nowTime(),
       status: 'todo',
-      priority: 'medium'
+      priority: 'medium',
+      client_id: clientId
     });
     textEl.value = '';
     await renderBoard();
@@ -260,6 +401,7 @@ async function renderBoard() {
 
   renderStats(todos);
   updateSidebar();
+  renderDailyTasks();
 
 
 }
@@ -281,6 +423,11 @@ function makeCard(todo) {
     document.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('drag-over'));
   });
 
+  const client = todo.client_id ? getClient(todo.client_id) : null;
+  const clientBadge = client
+    ? `<span class="card-client-badge" style="background:${client.color}22;color:${client.color};border:1px solid ${client.color}55">${client.name}</span>`
+    : '';
+
   div.innerHTML = `
     <div class="card-top">
       <i class="ti ti-grip-vertical card-drag-handle" aria-hidden="true"></i>
@@ -291,6 +438,7 @@ function makeCard(todo) {
       </div>
     </div>
     <div class="card-meta">
+      ${clientBadge}
       ${todo.date ? `<span class="meta-pill"><i class="ti ti-calendar" style="font-size:12px"></i>${fmtDateKR(todo.date)}</span>` : ''}
       ${todo.time ? `<span class="meta-pill"><i class="ti ti-clock" style="font-size:12px"></i>${todo.time}</span>` : ''}
     </div>
@@ -517,6 +665,15 @@ document.getElementById('cal-dh').innerHTML =
     return `<div class="cal-dh" style="border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px 0;text-align:center;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.06em;${color};background:var(--surface2)">${d}</div>`;
   }).join('');
 
+let _vacationDates = new Set(); // 'YYYY-MM-DD' 집합
+
+async function loadVacations() {
+  try {
+    const list = await apiGet('/vacations');
+    _vacationDates = new Set(list.map(v => v.date));
+  } catch(e) { /* 유지 */ }
+}
+
 async function renderCalendar() {
   const label = document.getElementById('cal-label');
   label.textContent = `${calY}년 ${MONTHS[calM]}`;
@@ -526,6 +683,8 @@ async function renderCalendar() {
     todos = await apiGet('/todos');
     _allTodos = todos;
   } catch(e) { todos = _allTodos; }
+
+  await loadVacations();
   const grid = document.getElementById('cal-grid');
   grid.innerHTML = '';
 
@@ -551,9 +710,12 @@ async function renderCalendar() {
     if (ds === calSel) cls += ' selected';
 
     const holidayName = getHolidayName(ds);
-    const red = dow === 0 || !!holidayName;
-    const blue = dow === 6 && !holidayName;
+    const isVacation = _vacationDates.has(ds);
+    const red = dow === 0 || !!holidayName || isVacation;
+    const blue = dow === 6 && !holidayName && !isVacation;
     const dayNumStyle = red ? 'color:#e53e3e' : blue ? 'color:#3b82f6' : '';
+
+    if (isVacation) cls += ' vacation';
 
     const MAX_SHOW = 3;
     const chips = dayTodos.slice(0, MAX_SHOW)
@@ -566,6 +728,7 @@ async function renderCalendar() {
     if (holidayName) cell.title = holidayName;
     cell.innerHTML = `
       <div class="cal-day-num" style="${dayNumStyle}">${d}</div>
+      ${isVacation ? `<div class="cal-vacation-badge">🏖️ 휴가</div>` : ''}
       ${holidayName ? `<div class="cal-holiday-name">${holidayName}</div>` : ''}
       <div class="cal-todo-chips">${chips}</div>
       ${more}
@@ -656,6 +819,7 @@ function openCalDayModal(ds) {
   const todos = _allTodos.filter(t => t.date === ds)
     .sort((a,b) => (a.time||'').localeCompare(b.time||''));
   const holidayName = getHolidayName(ds);
+  const isVacation = _vacationDates.has(ds);
 
   document.getElementById('cal-day-modal-title').textContent = fmtDateKR(ds);
   document.getElementById('cal-day-modal-holiday').textContent = holidayName || '';
@@ -663,9 +827,40 @@ function openCalDayModal(ds) {
   document.getElementById('cal-modal-qa-text').value = '';
   document.getElementById('cal-modal-qa-time').value = '';
 
+  updateVacationBtn(isVacation);
   renderCalDayModalList(todos);
   document.getElementById('cal-day-modal').classList.add('open');
   setTimeout(() => document.getElementById('cal-modal-qa-text').focus(), 80);
+}
+
+function updateVacationBtn(isVacation) {
+  const btn = document.getElementById('vacation-toggle-btn');
+  if (isVacation) {
+    btn.innerHTML = '<i class="ti ti-beach-off"></i> 휴가 해제';
+    btn.classList.add('active');
+  } else {
+    btn.innerHTML = '🏖️ 휴가 지정';
+    btn.classList.remove('active');
+  }
+}
+
+async function toggleVacation() {
+  const isVacation = _vacationDates.has(calSel);
+  try {
+    if (isVacation) {
+      await apiDelete('/vacations/' + calSel);
+      _vacationDates.delete(calSel);
+      showToast('휴가가 해제됐어요');
+    } else {
+      await apiPost('/vacations', { date: calSel });
+      _vacationDates.add(calSel);
+      showToast('🏖️ 휴가로 지정됐어요');
+    }
+    updateVacationBtn(_vacationDates.has(calSel));
+    // 캘린더 셀만 재렌더 (모달 유지)
+    await renderCalendar();
+    document.getElementById('cal-day-modal').classList.add('open');
+  } catch(e) { showToast('저장 실패: ' + e.message); }
 }
 
 function renderCalDayModalList(todos) {
@@ -1324,8 +1519,593 @@ async function deleteProcedure(id, name) {
   } catch(e) { showToast('삭제 실패: ' + e.message); }
 }
 
+// ── DAILY TASKS ───────────────────────────────────────
+let _dailyTasks = [];
+
+async function renderDailyTasks() {
+  try { _dailyTasks = await apiGet('/daily-tasks'); }
+  catch(e) { return; }
+
+  const today = todayStr();
+  const list = document.getElementById('daily-task-list');
+  const countEl = document.getElementById('cnt-daily');
+  const resetEl = document.getElementById('daily-reset-info');
+
+  // 완료 / 미완료 구분 (오늘 체크한 것만 완료 처리)
+  const total = _dailyTasks.length;
+  const doneToday = _dailyTasks.filter(t => t.checked && t.checked_date === today).length;
+  countEl.textContent = total;
+  resetEl.textContent = total > 0 ? `오늘 ${doneToday}/${total} 완료 · 내일 자동 초기화` : '';
+
+  list.innerHTML = '';
+  if (_dailyTasks.length === 0) {
+    list.innerHTML = `<div class="daily-empty">
+      <i class="ti ti-repeat" style="font-size:22px;opacity:0.3;display:block;margin-bottom:6px"></i>
+      매일 반복할 업무를 추가해보세요
+    </div>`;
+    return;
+  }
+
+  _dailyTasks.forEach(t => {
+    const checked = t.checked && t.checked_date === today;
+    const client = t.client_id ? getClient(t.client_id) : null;
+    const clientBadge = client
+      ? `<span class="card-client-badge" style="background:${client.color}22;color:${client.color};border:1px solid ${client.color}55">${client.name}</span>`
+      : '';
+    const row = document.createElement('div');
+    row.className = `daily-task-row${checked ? ' checked' : ''}`;
+    row.innerHTML = `
+      <label class="daily-checkbox-wrap">
+        <input type="checkbox" class="daily-checkbox" ${checked ? 'checked' : ''}
+          onchange="toggleDailyTask('${t.id}', this.checked)">
+        <span class="daily-checkmark"></span>
+      </label>
+      ${clientBadge}
+      <span class="daily-task-text">${escHtml(t.text)}</span>
+      <button class="card-btn del daily-del-btn" onclick="deleteDailyTask('${t.id}')" title="삭제">
+        <i class="ti ti-trash"></i>
+      </button>
+    `;
+    list.appendChild(row);
+  });
+}
+
+async function addDailyTask() {
+  const inp = document.getElementById('daily-qa-text');
+  const raw = inp.value.trim();
+  if (!raw) { inp.focus(); return; }
+  const { text, clientId } = parseClientTag(raw);
+  try {
+    await apiPost('/daily-tasks', { text, client_id: clientId || null });
+    inp.value = '';
+    await renderDailyTasks();
+    inp.focus();
+    showToast('일일 업무가 추가됐어요');
+  } catch(e) { showToast('저장 실패: ' + e.message); }
+}
+
+async function toggleDailyTask(id, checked) {
+  try {
+    await apiPut('/daily-tasks/' + id, {
+      checked: checked ? 1 : 0,
+      checked_date: checked ? todayStr() : null
+    });
+    await renderDailyTasks();
+  } catch(e) { showToast('저장 실패: ' + e.message); }
+}
+
+async function deleteDailyTask(id) {
+  try {
+    await apiDelete('/daily-tasks/' + id);
+    await renderDailyTasks();
+    showToast('삭제됐어요');
+  } catch(e) { showToast('삭제 실패: ' + e.message); }
+}
+
+document.getElementById('daily-qa-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addDailyTask();
+});
+document.getElementById('daily-qa-text').addEventListener('input', onDailyQaInput);
+
+// ── DARK MODE ─────────────────────────────────────────
+function toggleDarkMode() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  setDarkMode(!isDark);
+}
+
+function setDarkMode(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  localStorage.setItem('dc_todo_theme', dark ? 'dark' : 'light');
+  const btn = document.getElementById('dark-mode-btn');
+  btn.innerHTML = dark
+    ? '<i class="ti ti-sun"></i> 라이트 모드'
+    : '<i class="ti ti-moon"></i> 다크 모드';
+  // 차트 색상 갱신
+  if (_reportChart) renderReport();
+}
+
+function applyTheme() {
+  const saved = localStorage.getItem('dc_todo_theme') || 'light';
+  setDarkMode(saved === 'dark');
+}
+
+// ── REPORT ────────────────────────────────────────────
+let _reportTab = 'week';
+let _reportChart = null;
+
+function switchReportTab(tab) {
+  _reportTab = tab;
+  document.getElementById('tab-week').classList.toggle('active', tab === 'week');
+  document.getElementById('tab-month').classList.toggle('active', tab === 'month');
+  document.getElementById('tab-client').classList.toggle('active', tab === 'client');
+  renderReport();
+}
+
+async function renderReport() {
+  const todos = _allTodos.length ? _allTodos : await apiGet('/todos').catch(() => []);
+  if (_reportTab === 'week') renderWeekReport(todos);
+  else if (_reportTab === 'month') renderMonthReport(todos);
+  else renderClientReport(todos);
+}
+
+function renderWeekReport(todos) {
+  // 이번 주 월~일 구하기
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dow = today.getDay(); // 0=일
+  const monday = new Date(today); monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
+
+  const days = Array.from({length: 7}, (_, i) => {
+    const d = new Date(monday); d.setDate(monday.getDate() + i);
+    return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  });
+  const labels = days.map(ds => {
+    const d = new Date(ds);
+    return `${DAYS[d.getDay()]} ${d.getDate()}일`;
+  });
+
+  const totalArr = days.map(ds => todos.filter(t => t.date === ds).length);
+  const doneArr  = days.map(ds => todos.filter(t => t.date === ds && t.status === 'done').length);
+  const pctArr   = totalArr.map((t, i) => t ? Math.round(doneArr[i]/t*100) : 0);
+
+  document.getElementById('report-chart-title').textContent =
+    `${monday.getMonth()+1}월 ${monday.getDate()}일 주간 업무 현황`;
+
+  drawChart(labels, totalArr, doneArr);
+  renderReportSummary(todos, days);
+  renderReportDetail(todos, days, labels);
+}
+
+function renderMonthReport(todos) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const daysInM = new Date(y, m+1, 0).getDate();
+  const days = Array.from({length: daysInM}, (_, i) =>
+    `${y}-${p2(m+1)}-${p2(i+1)}`);
+  const labels = days.map((_, i) => `${i+1}일`);
+
+  const totalArr = days.map(ds => todos.filter(t => t.date === ds).length);
+  const doneArr  = days.map(ds => todos.filter(t => t.date === ds && t.status === 'done').length);
+
+  document.getElementById('report-chart-title').textContent =
+    `${y}년 ${m+1}월 월간 업무 현황`;
+
+  drawChart(labels, totalArr, doneArr);
+  renderReportSummary(todos, days);
+  renderReportDetail(todos, days, labels);
+}
+
+function drawChart(labels, totalArr, doneArr) {
+  if (_reportChart) { _reportChart.destroy(); _reportChart = null; }
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const textColor = isDark ? '#a0a09c' : '#a0a09a';
+
+  const ctx = document.getElementById('report-chart').getContext('2d');
+  _reportChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '전체 할 일',
+          data: totalArr,
+          backgroundColor: isDark ? 'rgba(123,147,245,0.25)' : 'rgba(123,147,245,0.2)',
+          borderColor: '#7b93f5',
+          borderWidth: 1.5,
+          borderRadius: 4,
+        },
+        {
+          label: '완료',
+          data: doneArr,
+          backgroundColor: isDark ? 'rgba(61,186,116,0.4)' : 'rgba(61,186,116,0.25)',
+          borderColor: '#3dba74',
+          borderWidth: 1.5,
+          borderRadius: 4,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: textColor, font: { family: 'DM Sans' } } },
+        tooltip: {
+          callbacks: {
+            afterLabel: (ctx) => {
+              const total = totalArr[ctx.dataIndex];
+              const done = doneArr[ctx.dataIndex];
+              return total ? `완료율: ${Math.round(done/total*100)}%` : '';
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+        y: {
+          ticks: { color: textColor, stepSize: 1 },
+          grid: { color: gridColor },
+          beginAtZero: true,
+        }
+      }
+    }
+  });
+}
+
+function renderReportSummary(todos, days) {
+  const rangedTodos = todos.filter(t => days.includes(t.date));
+  const total = rangedTodos.length;
+  const done  = rangedTodos.filter(t => t.status === 'done').length;
+  const wip   = rangedTodos.filter(t => t.status === 'wip').length;
+  const todo  = rangedTodos.filter(t => t.status === 'todo').length;
+  const pct   = total ? Math.round(done/total*100) : 0;
+  const label = _reportTab === 'week' ? '주간' : '월간';
+
+  document.getElementById('report-summary').innerHTML = `
+    <div class="report-stat">
+      <div class="report-stat-num drill-num" onclick="openReportDrill(null,'all','${label}')">
+        ${total}
+      </div>
+      <div class="report-stat-lbl">전체</div>
+    </div>
+    <div class="report-stat">
+      <div class="report-stat-num drill-num" style="color:#3dba74" onclick="openReportDrill('done','all','${label}')">
+        ${done}
+      </div>
+      <div class="report-stat-lbl">완료</div>
+    </div>
+    <div class="report-stat">
+      <div class="report-stat-num drill-num" style="color:#f0b429" onclick="openReportDrill('wip','all','${label}')">
+        ${wip}
+      </div>
+      <div class="report-stat-lbl">진행 중</div>
+    </div>
+    <div class="report-stat">
+      <div class="report-stat-num drill-num" style="color:#7b93f5" onclick="openReportDrill('todo','all','${label}')">
+        ${todo}
+      </div>
+      <div class="report-stat-lbl">미완료</div>
+    </div>
+    <div class="report-stat">
+      <div class="report-stat-num" style="color:${pct>=80?'#3dba74':pct>=50?'#f0b429':'#e53e3e'}">${pct}%</div>
+      <div class="report-stat-lbl">완료율</div>
+      <div class="progress-bar-wrap" style="margin-top:6px">
+        <div class="progress-bar-fill" style="width:${pct}%;background:${pct>=80?'#3dba74':pct>=50?'#f0b429':'#e53e3e'}"></div>
+      </div>
+    </div>
+  `;
+  // days 저장 (드릴다운에서 사용)
+  _reportDrillDays = days;
+}
+
+function renderReportDetail(todos, days, labels) {
+  const rows = days.map((ds, i) => {
+    const dayTodos = todos.filter(t => t.date === ds);
+    const done = dayTodos.filter(t => t.status === 'done').length;
+    const total = dayTodos.length;
+    const pct = total ? Math.round(done/total*100) : 0;
+    return { label: labels[i], ds, total, done, pct, dayTodos };
+  }).filter(r => r.total > 0);
+
+  const detail = document.getElementById('report-detail');
+  if (rows.length === 0) {
+    detail.innerHTML = `<div class="empty-full" style="margin-top:1rem"><p>이 기간에 등록된 할 일이 없어요</p></div>`;
+    return;
+  }
+  detail.innerHTML = `
+    <table class="report-table">
+      <thead>
+        <tr>
+          <th>날짜</th><th>전체</th><th>완료</th><th>미완료</th><th>완료율</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td>${r.label}</td>
+            <td>${r.total}</td>
+            <td style="color:#3dba74;font-weight:500">${r.done}</td>
+            <td style="color:#7b93f5">${r.total - r.done}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="progress-bar-wrap" style="flex:1;margin:0">
+                  <div class="progress-bar-fill" style="width:${r.pct}%;background:${r.pct>=80?'#3dba74':r.pct>=50?'#f0b429':'#e53e3e'}"></div>
+                </div>
+                <span style="font-family:'DM Mono',monospace;font-size:11px;width:32px;text-align:right">${r.pct}%</span>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderClientReport(todos) {
+  document.getElementById('report-chart-title').textContent = '고객사별 업무량 현황';
+
+  const clients = _clients.length ? _clients : [];
+  const labels  = clients.map(c => c.name);
+  const colors  = clients.map(c => c.color);
+
+  const totalArr = clients.map(c => todos.filter(t => t.client_id === c.id).length);
+  const doneArr  = clients.map(c => todos.filter(t => t.client_id === c.id && t.status === 'done').length);
+
+  // 차트
+  if (_reportChart) { _reportChart.destroy(); _reportChart = null; }
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const textColor = isDark ? '#a0a09c' : '#a0a09a';
+
+  const ctx = document.getElementById('report-chart').getContext('2d');
+  _reportChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '전체 업무',
+          data: totalArr,
+          backgroundColor: colors.map(c => c + '33'),
+          borderColor: colors,
+          borderWidth: 2,
+          borderRadius: 6,
+        },
+        {
+          label: '완료',
+          data: doneArr,
+          backgroundColor: colors.map(c => c + '88'),
+          borderColor: colors,
+          borderWidth: 2,
+          borderRadius: 6,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: textColor, font: { family: 'DM Sans' } } },
+        tooltip: {
+          callbacks: {
+            afterLabel: (ctx) => {
+              const total = totalArr[ctx.dataIndex];
+              const done  = doneArr[ctx.dataIndex];
+              return total ? `완료율: ${Math.round(done/total*100)}%` : '';
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+        y: { ticks: { color: textColor, stepSize: 1 }, grid: { color: gridColor }, beginAtZero: true }
+      }
+    }
+  });
+
+  // 요약 카드
+  const grandTotal = todos.length;
+  const grandDone  = todos.filter(t => t.status === 'done').length;
+  document.getElementById('report-summary').innerHTML = clients.map((c, i) => {
+    const t = totalArr[i], d = doneArr[i];
+    const pct = t ? Math.round(d/t*100) : 0;
+    const share = grandTotal ? Math.round(t/grandTotal*100) : 0;
+    return `
+      <div class="report-stat" style="border-top:3px solid ${c.color}">
+        <div style="font-size:11px;font-weight:600;color:${c.color};margin-bottom:6px;font-family:'DM Mono',monospace">${c.name}</div>
+        <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:4px">
+          <div>
+            <div class="report-stat-num drill-num" style="color:${c.color}" onclick="openReportDrill(null,'${c.id}','${c.name}')">${t}</div>
+            <div class="report-stat-lbl">전체</div>
+          </div>
+          <div>
+            <div class="report-stat-num drill-num" style="color:#3dba74;font-size:20px" onclick="openReportDrill('done','${c.id}','${c.name}')">${d}</div>
+            <div class="report-stat-lbl">완료</div>
+          </div>
+          <div>
+            <div class="report-stat-num drill-num" style="color:#7b93f5;font-size:20px" onclick="openReportDrill('todo','${c.id}','${c.name}')">${t - d}</div>
+            <div class="report-stat-lbl">미완료</div>
+          </div>
+        </div>
+        <div class="progress-bar-wrap" style="margin-top:4px">
+          <div class="progress-bar-fill" style="width:${pct}%;background:${c.color}"></div>
+        </div>
+        <div style="font-size:10px;color:var(--ink3);margin-top:4px;font-family:'DM Mono',monospace">완료율 ${pct}% · 업무비중 ${share}%</div>
+      </div>
+    `;
+  }).join('') + (todos.filter(t => !t.client_id).length ? `
+    <div class="report-stat" style="border-top:3px solid var(--border2)">
+      <div style="font-size:11px;color:var(--ink3);margin-bottom:6px;font-family:'DM Mono',monospace">미분류</div>
+      <div class="report-stat-num drill-num" onclick="openReportDrill(null,'none','미분류')">${todos.filter(t => !t.client_id).length}</div>
+      <div class="report-stat-lbl">고객사 미지정</div>
+    </div>
+  ` : '');
+
+  // 상세 테이블
+  document.getElementById('report-detail').innerHTML = `
+    <table class="report-table">
+      <thead>
+        <tr><th>고객사</th><th>전체</th><th>완료</th><th>진행 중</th><th>미완료</th><th>완료율</th><th>업무 비중</th></tr>
+      </thead>
+      <tbody>
+        ${clients.map((c, i) => {
+          const t = totalArr[i], d = doneArr[i];
+          const wip  = todos.filter(x => x.client_id === c.id && x.status === 'wip').length;
+          const todo = todos.filter(x => x.client_id === c.id && x.status === 'todo').length;
+          const pct  = t ? Math.round(d/t*100) : 0;
+          const share = grandTotal ? Math.round(t/grandTotal*100) : 0;
+          return `<tr>
+            <td><span class="card-client-badge" style="background:${c.color}22;color:${c.color};border:1px solid ${c.color}55">${c.name}</span></td>
+            <td>${t}</td>
+            <td style="color:#3dba74;font-weight:500">${d}</td>
+            <td style="color:#f0b429">${wip}</td>
+            <td style="color:#7b93f5">${todo}</td>
+            <td><div style="display:flex;align-items:center;gap:8px">
+              <div class="progress-bar-wrap" style="flex:1;margin:0"><div class="progress-bar-fill" style="width:${pct}%;background:${c.color}"></div></div>
+              <span style="font-family:'DM Mono',monospace;font-size:11px;width:32px;text-align:right">${pct}%</span>
+            </div></td>
+            <td style="font-family:'DM Mono',monospace;font-size:12px">${share}%</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ── REPORT DRILLDOWN ──────────────────────────────────
+let _reportDrillDays = [];
+
+function openReportDrill(status, clientFilter, label) {
+  const todos = _allTodos;
+
+  // 필터링
+  let filtered = [...todos];
+
+  // 기간 필터 (고객사탭이 아닐 때)
+  if (clientFilter === 'all' && _reportDrillDays.length) {
+    filtered = filtered.filter(t => _reportDrillDays.includes(t.date));
+  }
+  // 고객사 필터
+  if (clientFilter !== 'all') {
+    if (clientFilter === 'none') filtered = filtered.filter(t => !t.client_id);
+    else filtered = filtered.filter(t => t.client_id === clientFilter);
+  }
+  // 상태 필터
+  if (status === 'done')  filtered = filtered.filter(t => t.status === 'done');
+  if (status === 'wip')   filtered = filtered.filter(t => t.status === 'wip');
+  if (status === 'todo')  filtered = filtered.filter(t => t.status === 'todo');
+
+  // 날짜순 정렬
+  filtered.sort((a, b) => (a.date||'').localeCompare(b.date||'') || (a.time||'').localeCompare(b.time||''));
+
+  const statusLabel = status === 'done' ? '완료' : status === 'wip' ? '진행 중' : status === 'todo' ? '미완료' : '전체';
+  document.getElementById('drill-title').textContent = `${label} — ${statusLabel} ${filtered.length}건`;
+  document.getElementById('drill-subtitle').textContent =
+    status ? `"${statusLabel}" 상태의 업무 목록이에요` : '전체 업무 목록이에요';
+
+  const list = document.getElementById('drill-list');
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty-full" style="padding:1.5rem 0">
+      <i class="ti ti-clipboard-off" style="font-size:28px;opacity:0.25;display:block;margin-bottom:8px"></i>
+      <p>해당하는 업무가 없어요</p>
+    </div>`;
+  } else {
+    list.innerHTML = filtered.map(t => {
+      const client = t.client_id ? getClient(t.client_id) : null;
+      const badge = client
+        ? `<span class="card-client-badge" style="background:${client.color}22;color:${client.color};border:1px solid ${client.color}55;flex-shrink:0">${client.name}</span>`
+        : '';
+      const statusColor = t.status === 'done' ? '#3dba74' : t.status === 'wip' ? '#f0b429' : '#7b93f5';
+      return `
+        <div class="drill-item">
+          <span class="status-dot ${t.status}" style="flex-shrink:0;margin-top:3px"></span>
+          <div class="drill-item-body">
+            <div class="drill-item-text">${escHtml(t.text)}</div>
+            <div class="drill-item-meta">
+              ${badge}
+              ${t.date ? `<span><i class="ti ti-calendar" style="font-size:11px;vertical-align:-1px"></i> ${t.date}</span>` : ''}
+              ${t.time ? `<span><i class="ti ti-clock" style="font-size:11px;vertical-align:-1px"></i> ${t.time}</span>` : ''}
+              <span class="status-badge ${t.status}" style="font-size:10px;padding:1px 7px">${STATUS_KR[t.status]}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  document.getElementById('report-drill-modal').classList.add('open');
+}
+
+function closeReportDrill(e) {
+  if (e && e.target !== document.getElementById('report-drill-modal')) return;
+  document.getElementById('report-drill-modal').classList.remove('open');
+}
+
+function exportExcel() {
+  const todos = _allTodos;
+  const isWeek = _reportTab === 'week';
+  const now = new Date();
+
+  // 기간 계산
+  let days;
+  if (isWeek) {
+    const dow = now.getDay();
+    const monday = new Date(now); monday.setHours(0,0,0,0);
+    monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+    days = Array.from({length: 7}, (_, i) => {
+      const d = new Date(monday); d.setDate(monday.getDate() + i);
+      return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+    });
+  } else {
+    const y = now.getFullYear(), m = now.getMonth();
+    const daysInM = new Date(y, m+1, 0).getDate();
+    days = Array.from({length: daysInM}, (_, i) => `${y}-${p2(m+1)}-${p2(i+1)}`);
+  }
+
+  // 요약 시트
+  const summaryRows = [['날짜', '전체', '완료', '진행 중', '미완료', '완료율(%)']];
+  days.forEach(ds => {
+    const dt = todos.filter(t => t.date === ds);
+    if (!dt.length) return;
+    const done = dt.filter(t => t.status==='done').length;
+    const wip  = dt.filter(t => t.status==='wip').length;
+    const todo = dt.filter(t => t.status==='todo').length;
+    const pct  = Math.round(done/dt.length*100);
+    summaryRows.push([ds, dt.length, done, wip, todo, pct]);
+  });
+
+  // 상세 시트
+  const detailRows = [['날짜', '시간', '내용', '상태', '우선순위']];
+  todos.filter(t => days.includes(t.date)).forEach(t => {
+    detailRows.push([
+      t.date, t.time||'', t.text,
+      STATUS_KR[t.status] || t.status,
+      t.priority === 'high' ? '높음' : t.priority === 'low' ? '낮음' : '보통'
+    ]);
+  });
+
+  // 고객사별 시트
+  const clientRows = [['고객사', '전체', '완료', '진행 중', '미완료', '완료율(%)']];
+  _clients.forEach(c => {
+    const ct = todos.filter(t => t.client_id === c.id);
+    const d = ct.filter(t => t.status==='done').length;
+    const w = ct.filter(t => t.status==='wip').length;
+    const td = ct.filter(t => t.status==='todo').length;
+    const pct = ct.length ? Math.round(d/ct.length*100) : 0;
+    clientRows.push([c.name, ct.length, d, w, td, pct]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), '요약');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), '상세');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(clientRows), '고객사별');
+
+  const label = isWeek ? '주간' : '월간';
+  const dateStr = `${now.getFullYear()}${p2(now.getMonth()+1)}${p2(now.getDate())}`;
+  XLSX.writeFile(wb, `업무리포트_${label}_${dateStr}.xlsx`);
+  showToast('📊 Excel 파일이 다운로드됐어요');
+}
+
 // ── INIT ──────────────────────────────────────────────
 applyTitle();
+applyTheme();
 updateSidebar();
-renderBoard();
+loadClients().then(() => renderBoard());
 setInterval(updateSidebar, 60000);

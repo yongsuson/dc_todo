@@ -53,6 +53,46 @@ def _ensure_extra_tables(con):
         )
     """)
     con.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            id          TEXT    PRIMARY KEY,
+            name        TEXT    NOT NULL UNIQUE,
+            color       TEXT    NOT NULL DEFAULT '#888888',
+            created_at  INTEGER NOT NULL
+        )
+    """)
+    # todos에 client_id 컬럼 추가 (없을 경우에만)
+    try:
+        con.execute("ALTER TABLE todos ADD COLUMN client_id TEXT REFERENCES clients(id)")
+        con.commit()
+    except Exception:
+        pass
+    # daily_tasks에 client_id 컬럼 추가 (없을 경우에만)
+    try:
+        con.execute("ALTER TABLE daily_tasks ADD COLUMN client_id TEXT REFERENCES clients(id)")
+        con.commit()
+    except Exception:
+        pass
+    # 고객사는 사용자가 직접 추가 (고객사 관리 모달)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS daily_tasks (
+            id          TEXT    PRIMARY KEY,
+            text        TEXT    NOT NULL,
+            checked     INTEGER NOT NULL DEFAULT 0,
+            checked_date TEXT,
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            created_at  INTEGER NOT NULL,
+            updated_at  INTEGER NOT NULL
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS vacations (
+            id          TEXT    PRIMARY KEY,
+            date        TEXT    NOT NULL UNIQUE,
+            memo        TEXT,
+            created_at  INTEGER NOT NULL
+        )
+    """)
+    con.execute("""
         CREATE TABLE IF NOT EXISTS procedures (
             id          TEXT    PRIMARY KEY,
             title       TEXT    NOT NULL,
@@ -156,6 +196,12 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/api/procedures/"):
                 pid = path.split("/")[3]
                 self.get_procedure(pid)
+            elif path == "/api/vacations":
+                self.get_vacations(qs)
+            elif path == "/api/daily-tasks":
+                self.get_daily_tasks()
+            elif path == "/api/clients":
+                self.get_clients()
             else:
                 self.send_error_json("Not found", 404)
         except Exception as e:
@@ -175,6 +221,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.create_mail_template(body)
             elif path == "/api/procedures":
                 self.create_procedure(body)
+            elif path == "/api/vacations":
+                self.create_vacation(body)
+            elif path == "/api/daily-tasks":
+                self.create_daily_task(body)
+            elif path == "/api/clients":
+                self.create_client(body)
             else:
                 self.send_error_json("Not found", 404)
         except Exception as e:
@@ -199,6 +251,12 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/api/procedures/"):
                 pid = path.split("/")[3]
                 self.update_procedure(pid, body)
+            elif path.startswith("/api/daily-tasks/"):
+                did = path.split("/")[3]
+                self.update_daily_task(did, body)
+            elif path.startswith("/api/clients/"):
+                cid = path.split("/")[3]
+                self.update_client(cid, body)
             else:
                 self.send_error_json("Not found", 404)
         except Exception as e:
@@ -222,6 +280,15 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/api/procedures/"):
                 pid = path.split("/")[3]
                 self.delete_procedure(pid)
+            elif path.startswith("/api/vacations/"):
+                date = path.split("/")[3]
+                self.delete_vacation(date)
+            elif path.startswith("/api/daily-tasks/"):
+                did = path.split("/")[3]
+                self.delete_daily_task(did)
+            elif path.startswith("/api/clients/"):
+                cid = path.split("/")[3]
+                self.delete_client(cid)
             else:
                 self.send_error_json("Not found", 404)
         except Exception as e:
@@ -246,10 +313,13 @@ class Handler(BaseHTTPRequestHandler):
 
             sql = """
                 SELECT t.*,
-                       GROUP_CONCAT(tg.id || ':' || tg.name || ':' || tg.color) AS tags_raw
+                       GROUP_CONCAT(tg.id || ':' || tg.name || ':' || tg.color) AS tags_raw,
+                       c.name  AS client_name,
+                       c.color AS client_color
                   FROM todos t
                   LEFT JOIN todo_tags tt ON tt.todo_id = t.id
                   LEFT JOIN tags tg      ON tg.id = tt.tag_id
+                  LEFT JOIN clients c    ON c.id = t.client_id
             """
             if where:
                 sql += " WHERE " + " AND ".join(where)
@@ -296,8 +366,8 @@ class Handler(BaseHTTPRequestHandler):
         con = get_db()
         try:
             con.execute(
-                """INSERT INTO todos (id, text, status, priority, date, time, memo, done_at, recurrence_id, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO todos (id, text, status, priority, date, time, memo, done_at, recurrence_id, client_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [tid,
                  body["text"].strip(),
                  body.get("status", "todo"),
@@ -307,6 +377,7 @@ class Handler(BaseHTTPRequestHandler):
                  body.get("memo"),
                  body.get("done_at"),
                  body.get("recurrence_id"),
+                 body.get("client_id"),
                  ts, ts]
             )
             # 태그 연결
@@ -326,7 +397,7 @@ class Handler(BaseHTTPRequestHandler):
 
             fields = ["updated_at = ?"]
             params = [now_ms()]
-            for col in ["text", "status", "priority", "date", "time", "memo", "done_at"]:
+            for col in ["text", "status", "priority", "date", "time", "memo", "done_at", "client_id"]:
                 if col in body:
                     fields.append(f"{col} = ?")
                     params.append(body[col])
@@ -643,6 +714,165 @@ class Handler(BaseHTTPRequestHandler):
         con = get_db()
         try:
             con.execute("DELETE FROM procedures WHERE id = ?", [pid])
+            con.commit()
+            self.send_json({"ok": True})
+        finally:
+            con.close()
+
+    # ── VACATIONS ────────────────────────────────────
+
+    def get_vacations(self, qs):
+        con = get_db()
+        try:
+            rows = con.execute("SELECT * FROM vacations ORDER BY date").fetchall()
+            self.send_json([dict(r) for r in rows])
+        finally:
+            con.close()
+
+    def create_vacation(self, body):
+        if not body.get("date", "").strip():
+            return self.send_error_json("date is required")
+        vid = new_id()
+        ts = now_ms()
+        con = get_db()
+        try:
+            con.execute(
+                "INSERT OR IGNORE INTO vacations (id, date, memo, created_at) VALUES (?, ?, ?, ?)",
+                [vid, body["date"].strip(), body.get("memo", ""), ts]
+            )
+            con.commit()
+            row = con.execute("SELECT * FROM vacations WHERE date = ?", [body["date"].strip()]).fetchone()
+            self.send_json(dict(row))
+        finally:
+            con.close()
+
+    # ── CLIENTS ──────────────────────────────────────
+
+    def get_clients(self):
+        con = get_db()
+        try:
+            rows = con.execute("SELECT * FROM clients ORDER BY name").fetchall()
+            self.send_json([dict(r) for r in rows])
+        finally:
+            con.close()
+
+    def create_client(self, body):
+        name = body.get("name", "").strip()
+        if not name:
+            return self.send_error_json("name is required")
+        con = get_db()
+        try:
+            exists = con.execute(
+                "SELECT id FROM clients WHERE name = ? COLLATE NOCASE", [name]
+            ).fetchone()
+            if exists:
+                return self.send_error_json("이미 존재하는 고객사예요", 409)
+            cid = new_id()
+            con.execute(
+                "INSERT INTO clients (id, name, color, created_at) VALUES (?, ?, ?, ?)",
+                [cid, name, body.get("color", "#888888"), now_ms()]
+            )
+            con.commit()
+            row = con.execute("SELECT * FROM clients WHERE id = ?", [cid]).fetchone()
+            self.send_json(dict(row))
+        finally:
+            con.close()
+
+    def update_client(self, cid, body):
+        con = get_db()
+        try:
+            if not con.execute("SELECT id FROM clients WHERE id = ?", [cid]).fetchone():
+                return self.send_error_json("Not found", 404)
+            fields, params = [], []
+            for col in ["name", "color"]:
+                if col in body:
+                    fields.append(f"{col} = ?")
+                    params.append(body[col].strip() if isinstance(body[col], str) else body[col])
+            if not fields:
+                return self.send_error_json("nothing to update")
+            params.append(cid)
+            con.execute(f"UPDATE clients SET {', '.join(fields)} WHERE id = ?", params)
+            con.commit()
+            row = con.execute("SELECT * FROM clients WHERE id = ?", [cid]).fetchone()
+            self.send_json(dict(row))
+        finally:
+            con.close()
+
+    def delete_client(self, cid):
+        con = get_db()
+        try:
+            # 연결된 업무의 client_id 해제 후 삭제
+            con.execute("UPDATE todos SET client_id = NULL WHERE client_id = ?", [cid])
+            con.execute("UPDATE daily_tasks SET client_id = NULL WHERE client_id = ?", [cid])
+            con.execute("DELETE FROM clients WHERE id = ?", [cid])
+            con.commit()
+            self.send_json({"ok": True})
+        finally:
+            con.close()
+
+    def delete_vacation(self, date):
+        con = get_db()
+        try:
+            con.execute("DELETE FROM vacations WHERE date = ?", [date])
+            con.commit()
+            self.send_json({"ok": True})
+        finally:
+            con.close()
+
+    # ── DAILY TASKS ──────────────────────────────────
+
+    def get_daily_tasks(self):
+        con = get_db()
+        try:
+            rows = con.execute(
+                "SELECT * FROM daily_tasks ORDER BY sort_order, created_at"
+            ).fetchall()
+            self.send_json([dict(r) for r in rows])
+        finally:
+            con.close()
+
+    def create_daily_task(self, body):
+        if not body.get("text", "").strip():
+            return self.send_error_json("text is required")
+        did = new_id()
+        ts = now_ms()
+        con = get_db()
+        try:
+            max_order = con.execute("SELECT COALESCE(MAX(sort_order),0) FROM daily_tasks").fetchone()[0]
+            con.execute(
+                """INSERT INTO daily_tasks (id, text, checked, checked_date, sort_order, client_id, created_at, updated_at)
+                   VALUES (?, ?, 0, NULL, ?, ?, ?, ?)""",
+                [did, body["text"].strip(), max_order + 1, body.get("client_id"), ts, ts]
+            )
+            con.commit()
+            row = con.execute("SELECT * FROM daily_tasks WHERE id = ?", [did]).fetchone()
+            self.send_json(dict(row))
+        finally:
+            con.close()
+
+    def update_daily_task(self, did, body):
+        con = get_db()
+        try:
+            if not con.execute("SELECT id FROM daily_tasks WHERE id = ?", [did]).fetchone():
+                return self.send_error_json("Not found", 404)
+            fields = ["updated_at = ?"]
+            params = [now_ms()]
+            for col in ["text", "checked", "checked_date", "client_id"]:
+                if col in body:
+                    fields.append(f"{col} = ?")
+                    params.append(body[col])
+            params.append(did)
+            con.execute(f"UPDATE daily_tasks SET {', '.join(fields)} WHERE id = ?", params)
+            con.commit()
+            row = con.execute("SELECT * FROM daily_tasks WHERE id = ?", [did]).fetchone()
+            self.send_json(dict(row))
+        finally:
+            con.close()
+
+    def delete_daily_task(self, did):
+        con = get_db()
+        try:
+            con.execute("DELETE FROM daily_tasks WHERE id = ?", [did])
             con.commit()
             self.send_json({"ok": True})
         finally:

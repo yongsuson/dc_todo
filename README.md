@@ -2,7 +2,7 @@
 
 > 용수야 뭐 빼먹은 건 없냐?
 
-일정 관리부터 메일 포맷, 업무 순서, 주소록까지 — 실무에 필요한 것만 담은 로컬 업무 관리 웹앱입니다.
+일정 관리부터 메일 포맷, 업무 순서, 주소록, 고객사별 업무량 리포트까지 — 실무에 필요한 것만 담은 로컬 업무 관리 웹앱입니다.
 
 ---
 
@@ -11,13 +11,18 @@
 | 기능 | 설명 |
 |------|------|
 | 📋 **칸반 보드** | 할 일 / 진행 중 / 완료 드래그 앤 드롭 |
-| 📅 **캘린더** | 월간 일정 보기, 공휴일·대체공휴일 표시 (2024~2030) |
+| 🔁 **일일 업무** | 매일 반복하는 업무 체크리스트, 다음날 자동 초기화 |
+| 📅 **캘린더** | 월간 일정 보기, 공휴일·대체공휴일 표시 (2024~2030), 휴가/연차 지정 |
 | 🔍 **검색 / 기록** | 전체 할 일 검색 및 상태 필터 |
 | 📒 **주소록** | 이름·소속·직급·이메일·연락처 관리 |
-| ✉️ **메일 포맷** | 자주 쓰는 업무 메일 템플릿 저장·복사 |
-| 📌 **업무 순서** | 반복 업무 단계별 절차 저장 |
-| 📊 **통계 대시보드** | 전체·오늘 할 일 완료율 실시간 표시 |
-| 💰 **D-day** | 입사일 D+N, 다음 월급까지 D-N |
+| ✉️ **메일 포맷** | 자주 쓰는 업무 메일 템플릿 저장·복사, 카드 클릭 시 전체 보기 |
+| 📌 **업무 순서** | 반복 업무 단계별 절차 저장 (드래그로 순서 변경) |
+| 🏢 **고객사 관리** | 고객사 직접 추가/수정/삭제, `[고객사명]` 태그로 업무 자동 배정 |
+| 📊 **리포트** | 주간·월간·고객사별 업무량 그래프, 숫자 클릭 시 드릴다운, Excel 추출 |
+| 📈 **통계 대시보드** | 전체·오늘 할 일 완료율 실시간 표시 |
+| 💰 **D-day** | 입사일 D+N, 다음 월급까지 D-N (개인 설정) |
+| ⚙️ **개인 설정** | 앱 제목·입사일·월급일 직접 설정 (localStorage) |
+| 🌙 **다크 모드** | 라이트 / 다크 테마 전환 |
 
 ---
 
@@ -26,13 +31,14 @@
 ### 사전 준비
 - [Python 3.x](https://www.python.org/downloads/) 설치
   - 설치 시 **"Add Python to PATH"** 반드시 체크
+  - SQLite는 Python에 내장되어 있어 별도 설치 불필요
 
 ### 실행
 ```bash
 # 방법 1 — 터미널
 python server.py
 
-# 방법 2 — 더블클릭
+# 방법 2 — 더블클릭 (Windows)
 실행.bat
 ```
 
@@ -45,27 +51,31 @@ python server.py
 ## 🏗️ 아키텍처
 
 ```
-┌─────────────────────────────────────────┐
-│              Browser (Client)            │
-│                                         │
-│  todo.html ─── app.js ─── style.css     │
-│     │              │                    │
-│     └── 정적 파일  └── fetch API 호출   │
-└──────────────────┬──────────────────────┘
+┌─────────────────────────────────────────────┐
+│              Browser (Client)                │
+│                                              │
+│  todo.html ─── app.js ─── style.css          │
+│     │              │                         │
+│     │              ├── Chart.js (그래프)     │
+│     │              └── SheetJS (Excel 추출)  │
+│     └── 정적 파일  └── fetch API 호출        │
+│                                              │
+│  localStorage: 테마 · 개인 설정 저장         │
+└──────────────────┬───────────────────────────┘
                    │ HTTP (localhost:8000)
-┌──────────────────▼──────────────────────┐
-│         server.py (Python HTTP Server)   │
-│                                         │
-│  GET/POST/PUT/DELETE                    │
-│  /api/todos                             │
-│  /api/contacts                          │
-│  /api/mail-templates                    │
-│  /api/procedures                        │
-└──────────────────┬──────────────────────┘
+┌──────────────────▼───────────────────────────┐
+│         server.py (Python HTTP Server)        │
+│                                              │
+│  GET/POST/PUT/DELETE                          │
+│  /api/todos          /api/contacts            │
+│  /api/mail-templates /api/procedures          │
+│  /api/clients        /api/daily-tasks         │
+│  /api/vacations      /api/tags                │
+└──────────────────┬───────────────────────────┘
                    │ sqlite3 (내장)
-┌──────────────────▼──────────────────────┐
-│              todo.db (SQLite)            │
-└─────────────────────────────────────────┘
+┌──────────────────▼───────────────────────────┐
+│              todo.db (SQLite)                 │
+└───────────────────────────────────────────────┘
 ```
 
 ### 기술 스택
@@ -75,10 +85,12 @@ python server.py
 | Frontend | Vanilla JS, HTML5, CSS3 |
 | Backend | Python 3 (http.server 내장 모듈) |
 | Database | SQLite3 (Python 내장) |
+| 그래프 | Chart.js (CDN) |
+| Excel 추출 | SheetJS / xlsx (CDN) |
 | UI 아이콘 | Tabler Icons |
 | 폰트 | DM Sans, DM Mono, Instrument Serif |
 
-> **외부 의존성 없음** — Python만 설치되어 있으면 바로 실행 가능
+> **로컬 의존성 없음** — Python만 설치되어 있으면 바로 실행 가능 (그래프·Excel은 CDN 사용)
 
 ---
 
@@ -95,8 +107,30 @@ python server.py
 | time | TEXT | 시간 (HH:MM) |
 | memo | TEXT | 메모 |
 | done_at | TEXT | 완료 시각 |
+| client_id | TEXT FK | 고객사 (→ clients.id) |
+| recurrence_id | TEXT FK | 반복 규칙 (→ recurrences.id) |
 | created_at | INTEGER | 생성 타임스탬프 (ms) |
 | updated_at | INTEGER | 수정 타임스탬프 (ms) |
+
+### daily_tasks
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | TEXT PK | UUID |
+| text | TEXT NOT NULL | 일일 업무 내용 |
+| checked | INTEGER | 완료 여부 (0/1) |
+| checked_date | TEXT | 체크한 날짜 (다음날 자동 해제 기준) |
+| sort_order | INTEGER | 정렬 순서 |
+| client_id | TEXT FK | 고객사 (→ clients.id) |
+| created_at | INTEGER | 생성 타임스탬프 (ms) |
+| updated_at | INTEGER | 수정 타임스탬프 (ms) |
+
+### clients
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | TEXT PK | UUID |
+| name | TEXT NOT NULL UNIQUE | 고객사명 |
+| color | TEXT | 배지·그래프 색상 |
+| created_at | INTEGER | 생성 타임스탬프 (ms) |
 
 ### contacts
 | 컬럼 | 타입 | 설명 |
@@ -134,11 +168,35 @@ python server.py
 | created_at | INTEGER | 생성 타임스탬프 (ms) |
 | updated_at | INTEGER | 수정 타임스탬프 (ms) |
 
+### vacations
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | TEXT PK | UUID |
+| date | TEXT NOT NULL UNIQUE | 휴가 날짜 (YYYY-MM-DD) |
+| memo | TEXT | 메모 |
+| created_at | INTEGER | 생성 타임스탬프 (ms) |
+
 ### tags / todo_tags
 | 테이블 | 설명 |
 |--------|------|
 | tags | 태그 정의 (id, name, color) |
 | todo_tags | 할 일 ↔ 태그 N:M 관계 |
+
+> 고객사 삭제 시 연결된 `todos` / `daily_tasks`의 `client_id`는 `NULL`로 안전하게 해제됩니다.
+
+---
+
+## 🏢 고객사 태그 사용법
+
+할 일이나 일일 업무를 입력할 때 `[고객사명]`을 앞에 붙이면 해당 고객사로 자동 배정됩니다.
+
+```
+[Acme] 계약서 검토   →  Acme 고객사 업무로 저장 (텍스트: "계약서 검토")
+```
+
+- 대소문자 구분 없이 인식
+- 등록된 고객사명과 일치할 때만 배정
+- 셀렉트에서 직접 선택한 고객사보다 `[태그]`가 우선
 
 ---
 
@@ -149,12 +207,15 @@ Todo/
 ├── server.py       # Python HTTP 서버 + REST API
 ├── todo.html       # 단일 페이지 앱 (SPA) 마크업
 ├── app.js          # 전체 클라이언트 로직
-├── style.css       # 스타일시트
-├── schema.sql      # DB 스키마 정의
-├── todo.db         # SQLite 데이터베이스 (자동 생성)
+├── style.css       # 스타일시트 (라이트/다크 테마)
+├── schema.sql      # 초기 DB 스키마 정의
+├── todo.db         # SQLite 데이터베이스 (자동 생성, git 제외)
 ├── 실행.bat        # Windows 실행 스크립트
 └── README.md
 ```
+
+> `todo.db`에는 개인 업무 데이터가 들어있어 `.gitignore`로 버전 관리에서 제외됩니다.
+> 처음 실행 시 빈 데이터베이스가 자동으로 생성됩니다.
 
 ---
 

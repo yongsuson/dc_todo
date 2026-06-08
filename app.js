@@ -1607,6 +1607,18 @@ document.getElementById('daily-qa-text').addEventListener('keydown', e => {
 });
 document.getElementById('daily-qa-text').addEventListener('input', onDailyQaInput);
 
+// ── BACKUP ────────────────────────────────────────────
+function downloadBackup() {
+  // 브라우저가 /api/backup 응답을 파일로 저장하도록 트리거
+  const a = document.createElement('a');
+  a.href = API + '/backup';
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast('💾 데이터 백업 파일을 내려받는 중...');
+}
+
 // ── DARK MODE ─────────────────────────────────────────
 function toggleDarkMode() {
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';

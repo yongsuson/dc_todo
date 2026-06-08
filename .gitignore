@@ -3,6 +3,10 @@ todo.db
 *.db-shm
 *.db-wal
 
+# 자동 백업 (개인 데이터 포함)
+backups/
+todo_backup_*.db
+
 # Python 캐시
 __pycache__/
 *.pyc

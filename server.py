@@ -8,12 +8,56 @@ import json
 import sqlite3
 import uuid
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import shutil
+import glob
+import sys
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "todo.db")
-PORT = 8000
+# Windows 기본 콘솔(cp949) 등에서도 이모지/한글 print가 서버를 죽이지 않도록 UTF-8 강제
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+BASE_DIR = os.path.dirname(__file__)
+DB_PATH = os.path.join(BASE_DIR, "todo.db")
+BACKUP_DIR = os.path.join(BASE_DIR, "backups")
+BACKUP_KEEP = 14  # 자동 백업 보관 개수 (오래된 것부터 삭제)
+PORT = int(os.environ.get("PORT", 8000))  # 환경변수로 포트 변경 가능
+
+
+# ── 백업 ─────────────────────────────────────────────
+def _checkpoint_db():
+    """WAL 내용을 본 DB 파일에 합쳐 백업본이 최신 상태가 되도록 함."""
+    try:
+        con = sqlite3.connect(DB_PATH)
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        con.close()
+    except Exception as e:
+        print(f"  ⚠️  체크포인트 실패: {e}")
+
+
+def auto_backup():
+    """서버 시작 시 날짜별 자동 백업 (같은 날은 1개, 오래된 백업 정리)."""
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        _checkpoint_db()
+        stamp = datetime.now().strftime("%Y%m%d")
+        dest = os.path.join(BACKUP_DIR, f"todo_backup_{stamp}.db")
+        shutil.copy2(DB_PATH, dest)
+        # 오래된 백업 정리 (최근 BACKUP_KEEP개만 유지)
+        backups = sorted(glob.glob(os.path.join(BACKUP_DIR, "todo_backup_*.db")))
+        for old in backups[:-BACKUP_KEEP]:
+            os.remove(old)
+        print(f"  💾 자동 백업: {os.path.basename(dest)} (보관 {len(backups[-BACKUP_KEEP:])}개)")
+    except Exception as e:
+        print(f"  ⚠️  자동 백업 실패: {e}")
 
 
 # ── DB 연결 ──────────────────────────────────────────
@@ -174,7 +218,9 @@ class Handler(BaseHTTPRequestHandler):
 
         # ── API ──
         try:
-            if path == "/api/todos":
+            if path == "/api/backup":
+                self.download_backup()
+            elif path == "/api/todos":
                 self.get_todos(qs)
             elif path.startswith("/api/todos/"):
                 tid = path.split("/")[3]
@@ -878,6 +924,28 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             con.close()
 
+    # ── BACKUP ───────────────────────────────────────
+
+    def download_backup(self):
+        """현재 DB를 파일 다운로드로 응답 (WAL 체크포인트 후 전송)."""
+        if not os.path.exists(DB_PATH):
+            return self.send_error_json("DB 파일이 없어요", 404)
+        try:
+            _checkpoint_db()
+            with open(DB_PATH, "rb") as f:
+                data = f.read()
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
+            fname = f"todo_backup_{stamp}.db"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Content-Length", len(data))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_error_json(f"백업 실패: {e}", 500)
+
 
 # ── 유틸 ─────────────────────────────────────────────
 def parse_tags(raw):
@@ -894,6 +962,12 @@ def parse_tags(raw):
 # ── 실행 ─────────────────────────────────────────────
 if __name__ == "__main__":
     print(f"✅  DB: {DB_PATH}")
+    auto_backup()  # 시작 시 자동 백업
     print(f"🚀  서버 시작: http://localhost:{PORT}")
     print(f"    종료: Ctrl+C\n")
-    HTTPServer(("localhost", PORT), Handler).serve_forever()
+    server = ThreadingHTTPServer(("localhost", PORT), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n👋  서버를 종료합니다.")
+        server.shutdown()

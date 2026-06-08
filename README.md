@@ -23,6 +23,7 @@
 | 💰 **D-day** | 입사일 D+N, 다음 월급까지 D-N (개인 설정) |
 | ⚙️ **개인 설정** | 앱 제목·입사일·월급일 직접 설정 (localStorage) |
 | 🌙 **다크 모드** | 라이트 / 다크 테마 전환 |
+| 💾 **데이터 백업** | 서버 시작 시 자동 백업 + 버튼으로 즉시 다운로드 |
 
 ---
 
@@ -64,17 +65,18 @@ python server.py
 └──────────────────┬───────────────────────────┘
                    │ HTTP (localhost:8000)
 ┌──────────────────▼───────────────────────────┐
-│         server.py (Python HTTP Server)        │
+│    server.py (Python ThreadingHTTPServer)     │
 │                                              │
 │  GET/POST/PUT/DELETE                          │
 │  /api/todos          /api/contacts            │
 │  /api/mail-templates /api/procedures          │
 │  /api/clients        /api/daily-tasks         │
 │  /api/vacations      /api/tags                │
+│  /api/backup  ← DB 다운로드                   │
 └──────────────────┬───────────────────────────┘
-                   │ sqlite3 (내장)
+                   │ sqlite3 (내장, WAL 모드)
 ┌──────────────────▼───────────────────────────┐
-│              todo.db (SQLite)                 │
+│   todo.db (SQLite)  ──자동복사──▶  backups/   │
 └───────────────────────────────────────────────┘
 ```
 
@@ -83,8 +85,8 @@ python server.py
 | 구분 | 기술 |
 |------|------|
 | Frontend | Vanilla JS, HTML5, CSS3 |
-| Backend | Python 3 (http.server 내장 모듈) |
-| Database | SQLite3 (Python 내장) |
+| Backend | Python 3 (http.server — ThreadingHTTPServer) |
+| Database | SQLite3 (Python 내장, WAL 모드) |
 | 그래프 | Chart.js (CDN) |
 | Excel 추출 | SheetJS / xlsx (CDN) |
 | UI 아이콘 | Tabler Icons |
@@ -200,21 +202,38 @@ python server.py
 
 ---
 
+## 💾 데이터 백업
+
+모든 데이터가 `todo.db` 단일 파일에 저장되므로, 유실 방지를 위해 두 가지 백업 장치를 둡니다.
+
+| 종류 | 동작 | 위치 |
+|------|------|------|
+| **자동 백업** | 서버 시작 시 그날짜 백업본 자동 저장 (최근 14개 보관) | `backups/todo_backup_YYYYMMDD.db` |
+| **수동 백업** | 사이드바 **💾 데이터 백업** 버튼 클릭 → 즉시 다운로드 | 브라우저 다운로드 폴더 |
+
+- 백업 전 **WAL 체크포인트**를 수행해 항상 최신 상태를 보장합니다.
+- **복원 방법**: 백업한 `.db` 파일을 `todo.db`로 이름을 바꿔 폴더에 덮어쓰고 서버를 재시작하면 됩니다.
+
+> `backups/` 폴더와 백업 파일은 개인 데이터이므로 `.gitignore`로 버전 관리에서 제외됩니다.
+
+---
+
 ## 📁 파일 구조
 
 ```
 Todo/
-├── server.py       # Python HTTP 서버 + REST API
+├── server.py       # Python HTTP 서버 + REST API + 자동 백업
 ├── todo.html       # 단일 페이지 앱 (SPA) 마크업
 ├── app.js          # 전체 클라이언트 로직
 ├── style.css       # 스타일시트 (라이트/다크 테마)
 ├── schema.sql      # 초기 DB 스키마 정의
 ├── todo.db         # SQLite 데이터베이스 (자동 생성, git 제외)
+├── backups/        # 자동 백업 폴더 (자동 생성, git 제외)
 ├── 실행.bat        # Windows 실행 스크립트
 └── README.md
 ```
 
-> `todo.db`에는 개인 업무 데이터가 들어있어 `.gitignore`로 버전 관리에서 제외됩니다.
+> `todo.db`와 `backups/`에는 개인 업무 데이터가 들어있어 `.gitignore`로 버전 관리에서 제외됩니다.
 > 처음 실행 시 빈 데이터베이스가 자동으로 생성됩니다.
 
 ---

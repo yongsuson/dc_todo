@@ -13,7 +13,7 @@ import glob
 import sys
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 import os
 
 # Windows 기본 콘솔(cp949) 등에서도 이모지/한글 print가 서버를 죽이지 않도록 UTF-8 강제
@@ -71,6 +71,15 @@ def get_db():
 
 
 def _ensure_extra_tables(con):
+    # 핵심 테이블(todos 등)이 없으면 schema.sql 적용 (새 PC 첫 실행 시)
+    row = con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='todos'"
+    ).fetchone()
+    if row is None:
+        schema_path = os.path.join(BASE_DIR, "schema.sql")
+        with open(schema_path, encoding="utf-8") as f:
+            con.executescript(f.read())
+        con.commit()
     con.execute("""
         CREATE TABLE IF NOT EXISTS contacts (
             id          TEXT    PRIMARY KEY,
@@ -191,17 +200,26 @@ class Handler(BaseHTTPRequestHandler):
     def serve_static(self, path):
         if path == "/" or path == "":
             path = "/todo.html"
+        # 한글 등 퍼센트 인코딩된 파일명(예: 퇴근.jpg) 디코딩
+        path = unquote(path)
         file_path = os.path.dirname(__file__) + path
         if not os.path.exists(file_path):
             self.send_response(404)
             self.end_headers()
             return
-        ext = os.path.splitext(file_path)[1]
-        mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}.get(ext, "text/plain")
+        ext = os.path.splitext(file_path)[1].lower()
+        mime = {
+            ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+            ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
+            ".ico": "image/x-icon",
+        }.get(ext, "text/plain")
+        # 텍스트 계열에만 charset을 붙이고, 이미지 등 바이너리는 그대로 전송
+        content_type = mime + "; charset=utf-8" if mime.startswith("text/") else mime
         with open(file_path, "rb") as f:
             body = f.read()
         self.send_response(200)
-        self.send_header("Content-Type", mime + "; charset=utf-8")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", len(body))
         self.end_headers()
         self.wfile.write(body)

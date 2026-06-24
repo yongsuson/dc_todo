@@ -47,19 +47,21 @@
     <button class="nav-item" onclick="goPage('report')">
       <i class="ti ti-chart-bar"></i> 리포트
     </button>
+    <button class="nav-item" onclick="toggleDarkMode()" id="dark-mode-btn">
+      <i class="ti ti-moon"></i> 다크 모드
+    </button>
 
     <div class="sidebar-spacer"></div>
     <div class="sidebar-copyright">© 신림동나무늘보</div>
 
     <div class="sidebar-footer">
+      <img src="/퇴근.jpg" alt="퇴근하고 싶다" class="quit-img" id="quit-img"
+           onclick="this.classList.toggle('expanded')" title="클릭!">
       <div class="dday-badge dday-badge-clickable" id="sb-dday" onclick="openSettings()" title="설정"></div>
       <div class="dday-badge dday-badge-clickable" id="sb-payday" onclick="openSettings()" title="설정"></div>
       <div class="today-badge" id="sb-stats"></div>
       <button class="btn-settings" onclick="openSettings()" title="설정">
         <i class="ti ti-settings"></i> 설정
-      </button>
-      <button class="btn-settings" onclick="toggleDarkMode()" id="dark-mode-btn">
-        <i class="ti ti-moon"></i> 다크 모드
       </button>
       <button class="btn-settings" onclick="downloadBackup()" title="현재 데이터를 .db 파일로 저장">
         <i class="ti ti-download"></i> 데이터 백업

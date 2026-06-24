@@ -240,6 +240,25 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* 퇴근하고 싶다 짤 — 평소 작게, 클릭하면 커짐 */
+.quit-img {
+  display: block;
+  width: 110px;
+  height: auto;
+  margin: 0 auto 0.85rem;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: width 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
+}
+.quit-img:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.quit-img.expanded {
+  width: 100%;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
 .dday-badge {
   font-family: 'DM Mono', monospace;
   font-size: 11px;

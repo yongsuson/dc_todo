@@ -97,7 +97,17 @@ body {
   position: fixed;
   top: 0; left: 0; bottom: 0;
   z-index: 10;
+  overflow-y: auto;
 }
+
+/* 사이드바 스크롤바 얇게 */
+.sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 3px;
+}
+.sidebar::-webkit-scrollbar-thumb:hover { background: var(--ink3); }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
 
 .sidebar-logo {
   padding: 0 1.25rem 1.5rem;

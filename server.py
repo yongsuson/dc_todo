@@ -137,6 +137,19 @@ def _ensure_extra_tables(con):
             updated_at  INTEGER NOT NULL
         )
     """)
+    # 일일 업무 완료 히스토리 (리포트 집계용).
+    # text·client_id를 함께 저장해 원본 일일 업무가 수정·삭제돼도 기록이 남음.
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS daily_task_log (
+            task_id     TEXT    NOT NULL,
+            date        TEXT    NOT NULL,
+            text        TEXT    NOT NULL,
+            client_id   TEXT,
+            done_at     INTEGER NOT NULL,
+            PRIMARY KEY (task_id, date)
+        )
+    """)
+    con.execute("CREATE INDEX IF NOT EXISTS idx_daily_log_date ON daily_task_log(date)")
     con.execute("""
         CREATE TABLE IF NOT EXISTS vacations (
             id          TEXT    PRIMARY KEY,
@@ -161,6 +174,10 @@ def _ensure_extra_tables(con):
 
 def now_ms():
     return int(time.time() * 1000)
+
+
+def today_str():
+    return time.strftime("%Y-%m-%d")
 
 
 def new_id():
@@ -264,6 +281,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.get_vacations(qs)
             elif path == "/api/daily-tasks":
                 self.get_daily_tasks()
+            elif path == "/api/daily-task-log":
+                self.get_daily_task_log()
             elif path == "/api/clients":
                 self.get_clients()
             else:
@@ -895,6 +914,16 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             con.close()
 
+    def get_daily_task_log(self):
+        con = get_db()
+        try:
+            rows = con.execute(
+                "SELECT task_id, date, text, client_id, done_at FROM daily_task_log ORDER BY date"
+            ).fetchall()
+            self.send_json([dict(r) for r in rows])
+        finally:
+            con.close()
+
     def create_daily_task(self, body):
         if not body.get("text", "").strip():
             return self.send_error_json("text is required")
@@ -917,7 +946,8 @@ class Handler(BaseHTTPRequestHandler):
     def update_daily_task(self, did, body):
         con = get_db()
         try:
-            if not con.execute("SELECT id FROM daily_tasks WHERE id = ?", [did]).fetchone():
+            row0 = con.execute("SELECT * FROM daily_tasks WHERE id = ?", [did]).fetchone()
+            if not row0:
                 return self.send_error_json("Not found", 404)
             fields = ["updated_at = ?"]
             params = [now_ms()]
@@ -927,6 +957,25 @@ class Handler(BaseHTTPRequestHandler):
                     params.append(body[col])
             params.append(did)
             con.execute(f"UPDATE daily_tasks SET {', '.join(fields)} WHERE id = ?", params)
+
+            # 완료 히스토리 기록 (리포트 집계용) — 체크 상태가 바뀔 때만
+            if "checked" in body:
+                log_date = body.get("checked_date") or today_str()
+                if body.get("checked"):
+                    con.execute(
+                        """INSERT OR REPLACE INTO daily_task_log (task_id, date, text, client_id, done_at)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        [did, log_date,
+                         body.get("text", row0["text"]),
+                         body.get("client_id", row0["client_id"]),
+                         now_ms()]
+                    )
+                else:
+                    # 체크 해제 시 해당 날짜 기록 제거
+                    con.execute(
+                        "DELETE FROM daily_task_log WHERE task_id = ? AND date = ?",
+                        [did, log_date]
+                    )
             con.commit()
             row = con.execute("SELECT * FROM daily_tasks WHERE id = ?", [did]).fetchone()
             self.send_json(dict(row))

@@ -325,6 +325,7 @@ async function addTodo() {
       client_id: clientId
     });
     textEl.value = '';
+    if (clientEl) clientEl.value = '';   // 등록 후 고객사 선택 초기화 → '고객사 없음'
     await renderBoard();
     textEl.focus();   // renderBoard 완료 후 포커스 복원
     showToast('할 일이 추가되었어요');
@@ -488,6 +489,8 @@ function editCard(id) {
   document.getElementById('todo-edit-id').value = id;
   const ta = document.getElementById('todo-edit-text');
   ta.value = t.text;
+  document.getElementById('todo-edit-date').value = t.date || '';
+  document.getElementById('todo-edit-time').value = t.time || '';
   document.getElementById('todo-edit-modal').classList.add('open');
   setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 80);
 }
@@ -500,11 +503,17 @@ function closeTodoEditModal(e) {
 async function saveTodoEdit() {
   const id = document.getElementById('todo-edit-id').value;
   const val = document.getElementById('todo-edit-text').value.trim();
+  const date = document.getElementById('todo-edit-date').value || null;
+  const time = document.getElementById('todo-edit-time').value || null;
   const t = _allTodos.find(x => x.id === id);
   if (!val) { document.getElementById('todo-edit-text').focus(); return; }
-  if (val === t?.text) { document.getElementById('todo-edit-modal').classList.remove('open'); return; }
+  // 변경 사항이 없으면 그냥 닫기
+  if (val === t?.text && date === (t?.date || null) && time === (t?.time || null)) {
+    document.getElementById('todo-edit-modal').classList.remove('open');
+    return;
+  }
   try {
-    await apiPut('/todos/' + id, { text: val });
+    await apiPut('/todos/' + id, { text: val, date, time });
     document.getElementById('todo-edit-modal').classList.remove('open');
     await renderBoard();
     showToast('✅ 수정 완료됐어요');
@@ -1642,22 +1651,68 @@ function applyTheme() {
 }
 
 // ── REPORT ────────────────────────────────────────────
-let _reportTab = 'week';
+let _reportTab = 'day';
 let _reportChart = null;
+let _dailyLog = [];   // 일일 업무 완료 히스토리 캐시
+
+// 특정 날짜/월에 완료된 일일 업무 건수
+function dailyDoneOn(ds) {
+  return _dailyLog.filter(l => l.date === ds).length;
+}
+function dailyDoneInMonth(y, m) {
+  const prefix = `${y}-${p2(m+1)}`;
+  return _dailyLog.filter(l => l.date && l.date.startsWith(prefix)).length;
+}
 
 function switchReportTab(tab) {
   _reportTab = tab;
+  document.getElementById('tab-day').classList.toggle('active', tab === 'day');
   document.getElementById('tab-week').classList.toggle('active', tab === 'week');
   document.getElementById('tab-month').classList.toggle('active', tab === 'month');
+  document.getElementById('tab-year').classList.toggle('active', tab === 'year');
   document.getElementById('tab-client').classList.toggle('active', tab === 'client');
   renderReport();
 }
 
 async function renderReport() {
   const todos = _allTodos.length ? _allTodos : await apiGet('/todos').catch(() => []);
-  if (_reportTab === 'week') renderWeekReport(todos);
+  _dailyLog = await apiGet('/daily-task-log').catch(() => []);
+  if (_reportTab === 'day') renderDayReport(todos);
+  else if (_reportTab === 'week') renderWeekReport(todos);
   else if (_reportTab === 'month') renderMonthReport(todos);
+  else if (_reportTab === 'year') renderYearReport(todos);
   else renderClientReport(todos);
+}
+
+function renderDayReport(todos) {
+  const today = todayStr();
+  const days = [today];
+  const todayLog = _dailyLog.filter(l => l.date === today);
+
+  // 오늘 업무를 고객사별로 집계 (할 일 + 완료한 일일 업무)
+  const rowsData = [];
+  (_clients || []).forEach(c => {
+    const ct = todos.filter(t => t.date === today && t.client_id === c.id);
+    const dl = todayLog.filter(l => l.client_id === c.id).length;
+    const total = ct.length + dl;
+    if (!total) return;
+    const done = ct.filter(t => t.status === 'done').length + dl;
+    rowsData.push({ label: c.name, total, done, pct: Math.round(done/total*100) });
+  });
+  // 미분류
+  const un = todos.filter(t => t.date === today && !t.client_id);
+  const unDl = todayLog.filter(l => !l.client_id).length;
+  const unTotal = un.length + unDl;
+  if (unTotal) {
+    const unDone = un.filter(t => t.status === 'done').length + unDl;
+    rowsData.push({ label: '미분류', total: unTotal, done: unDone, pct: Math.round(unDone/unTotal*100) });
+  }
+
+  document.getElementById('report-chart-title').textContent = `오늘 (${today}) 업무 현황`;
+  drawChart(rowsData.map(r => r.label), rowsData.map(r => r.total), rowsData.map(r => r.done));
+
+  renderReportSummary(todos, days);
+  renderDetailTable(rowsData, '고객사');
 }
 
 function renderWeekReport(todos) {
@@ -1675,8 +1730,8 @@ function renderWeekReport(todos) {
     return `${DAYS[d.getDay()]} ${d.getDate()}일`;
   });
 
-  const totalArr = days.map(ds => todos.filter(t => t.date === ds).length);
-  const doneArr  = days.map(ds => todos.filter(t => t.date === ds && t.status === 'done').length);
+  const totalArr = days.map(ds => todos.filter(t => t.date === ds).length + dailyDoneOn(ds));
+  const doneArr  = days.map(ds => todos.filter(t => t.date === ds && t.status === 'done').length + dailyDoneOn(ds));
   const pctArr   = totalArr.map((t, i) => t ? Math.round(doneArr[i]/t*100) : 0);
 
   document.getElementById('report-chart-title').textContent =
@@ -1695,8 +1750,8 @@ function renderMonthReport(todos) {
     `${y}-${p2(m+1)}-${p2(i+1)}`);
   const labels = days.map((_, i) => `${i+1}일`);
 
-  const totalArr = days.map(ds => todos.filter(t => t.date === ds).length);
-  const doneArr  = days.map(ds => todos.filter(t => t.date === ds && t.status === 'done').length);
+  const totalArr = days.map(ds => todos.filter(t => t.date === ds).length + dailyDoneOn(ds));
+  const doneArr  = days.map(ds => todos.filter(t => t.date === ds && t.status === 'done').length + dailyDoneOn(ds));
 
   document.getElementById('report-chart-title').textContent =
     `${y}년 ${m+1}월 월간 업무 현황`;
@@ -1704,6 +1759,38 @@ function renderMonthReport(todos) {
   drawChart(labels, totalArr, doneArr);
   renderReportSummary(todos, days);
   renderReportDetail(todos, days, labels);
+}
+
+function renderYearReport(todos) {
+  const y = new Date().getFullYear();
+  const labels = Array.from({length: 12}, (_, m) => `${m+1}월`);
+  const inMonth = (t, m) => t.date && t.date.startsWith(`${y}-${p2(m+1)}`);
+
+  const totalArr = labels.map((_, m) => todos.filter(t => inMonth(t, m)).length + dailyDoneInMonth(y, m));
+  const doneArr  = labels.map((_, m) => todos.filter(t => inMonth(t, m) && t.status === 'done').length + dailyDoneInMonth(y, m));
+
+  document.getElementById('report-chart-title').textContent = `${y}년 연간 업무 현황`;
+
+  drawChart(labels, totalArr, doneArr);
+
+  // 요약·드릴다운은 올해 전체 날짜 목록 기준
+  const yearDays = [];
+  for (let m = 0; m < 12; m++) {
+    const daysInM = new Date(y, m+1, 0).getDate();
+    for (let d = 1; d <= daysInM; d++) yearDays.push(`${y}-${p2(m+1)}-${p2(d)}`);
+  }
+  renderReportSummary(todos, yearDays);
+
+  // 상세는 월별 12행
+  const rows = labels.map((label, m) => {
+    const mt = todos.filter(t => inMonth(t, m));
+    const dc = dailyDoneInMonth(y, m);
+    const done = mt.filter(t => t.status === 'done').length + dc;
+    const total = mt.length + dc;
+    const pct = total ? Math.round(done/total*100) : 0;
+    return { label, total, done, pct };
+  }).filter(r => r.total > 0);
+  renderDetailTable(rows, '월');
 }
 
 function drawChart(labels, totalArr, doneArr) {
@@ -1764,12 +1851,13 @@ function drawChart(labels, totalArr, doneArr) {
 
 function renderReportSummary(todos, days) {
   const rangedTodos = todos.filter(t => days.includes(t.date));
-  const total = rangedTodos.length;
-  const done  = rangedTodos.filter(t => t.status === 'done').length;
+  const dailyDone = _dailyLog.filter(l => days.includes(l.date)).length;
+  const total = rangedTodos.length + dailyDone;
+  const done  = rangedTodos.filter(t => t.status === 'done').length + dailyDone;
   const wip   = rangedTodos.filter(t => t.status === 'wip').length;
   const todo  = rangedTodos.filter(t => t.status === 'todo').length;
   const pct   = total ? Math.round(done/total*100) : 0;
-  const label = _reportTab === 'week' ? '주간' : '월간';
+  const label = _reportTab === 'day' ? '오늘' : _reportTab === 'week' ? '주간' : _reportTab === 'year' ? '연간' : '월간';
 
   document.getElementById('report-summary').innerHTML = `
     <div class="report-stat">
@@ -1811,12 +1899,16 @@ function renderReportSummary(todos, days) {
 function renderReportDetail(todos, days, labels) {
   const rows = days.map((ds, i) => {
     const dayTodos = todos.filter(t => t.date === ds);
-    const done = dayTodos.filter(t => t.status === 'done').length;
-    const total = dayTodos.length;
+    const dc = dailyDoneOn(ds);
+    const done = dayTodos.filter(t => t.status === 'done').length + dc;
+    const total = dayTodos.length + dc;
     const pct = total ? Math.round(done/total*100) : 0;
-    return { label: labels[i], ds, total, done, pct, dayTodos };
+    return { label: labels[i], total, done, pct };
   }).filter(r => r.total > 0);
+  renderDetailTable(rows, '날짜');
+}
 
+function renderDetailTable(rows, colName) {
   const detail = document.getElementById('report-detail');
   if (rows.length === 0) {
     detail.innerHTML = `<div class="empty-full" style="margin-top:1rem"><p>이 기간에 등록된 할 일이 없어요</p></div>`;
@@ -1826,7 +1918,7 @@ function renderReportDetail(todos, days, labels) {
     <table class="report-table">
       <thead>
         <tr>
-          <th>날짜</th><th>전체</th><th>완료</th><th>미완료</th><th>완료율</th>
+          <th>${colName}</th><th>전체</th><th>완료</th><th>미완료</th><th>완료율</th>
         </tr>
       </thead>
       <tbody>
@@ -2004,6 +2096,14 @@ function openReportDrill(status, clientFilter, label) {
   if (status === 'wip')   filtered = filtered.filter(t => t.status === 'wip');
   if (status === 'todo')  filtered = filtered.filter(t => t.status === 'todo');
 
+  // 일일 업무 완료분 합산 (기간 드릴다운의 전체·완료 목록에만)
+  if (clientFilter === 'all' && (status === null || status === 'done')) {
+    const dailyItems = _dailyLog
+      .filter(l => !_reportDrillDays.length || _reportDrillDays.includes(l.date))
+      .map(l => ({ text: l.text, date: l.date, time: '', status: 'done', client_id: l.client_id, _daily: true }));
+    filtered = filtered.concat(dailyItems);
+  }
+
   // 날짜순 정렬
   filtered.sort((a, b) => (a.date||'').localeCompare(b.date||'') || (a.time||'').localeCompare(b.time||''));
 
@@ -2032,6 +2132,7 @@ function openReportDrill(status, clientFilter, label) {
             <div class="drill-item-text">${escHtml(t.text)}</div>
             <div class="drill-item-meta">
               ${badge}
+              ${t._daily ? `<span class="status-badge" style="font-size:10px;padding:1px 7px;background:#7b93f522;color:#7b93f5">일일 업무</span>` : ''}
               ${t.date ? `<span><i class="ti ti-calendar" style="font-size:11px;vertical-align:-1px"></i> ${t.date}</span>` : ''}
               ${t.time ? `<span><i class="ti ti-clock" style="font-size:11px;vertical-align:-1px"></i> ${t.time}</span>` : ''}
               <span class="status-badge ${t.status}" style="font-size:10px;padding:1px 7px">${STATUS_KR[t.status]}</span>
@@ -2052,12 +2153,14 @@ function closeReportDrill(e) {
 
 function exportExcel() {
   const todos = _allTodos;
-  const isWeek = _reportTab === 'week';
+  const mode = _reportTab;  // 'week' | 'month' | 'year' | 'client'(→현재 월)
   const now = new Date();
 
   // 기간 계산
   let days;
-  if (isWeek) {
+  if (mode === 'day') {
+    days = [todayStr()];
+  } else if (mode === 'week') {
     const dow = now.getDay();
     const monday = new Date(now); monday.setHours(0,0,0,0);
     monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
@@ -2065,23 +2168,47 @@ function exportExcel() {
       const d = new Date(monday); d.setDate(monday.getDate() + i);
       return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
     });
+  } else if (mode === 'year') {
+    const y = now.getFullYear();
+    days = [];
+    for (let m = 0; m < 12; m++) {
+      const daysInM = new Date(y, m+1, 0).getDate();
+      for (let d = 1; d <= daysInM; d++) days.push(`${y}-${p2(m+1)}-${p2(d)}`);
+    }
   } else {
     const y = now.getFullYear(), m = now.getMonth();
     const daysInM = new Date(y, m+1, 0).getDate();
     days = Array.from({length: daysInM}, (_, i) => `${y}-${p2(m+1)}-${p2(i+1)}`);
   }
 
-  // 요약 시트
-  const summaryRows = [['날짜', '전체', '완료', '진행 중', '미완료', '완료율(%)']];
-  days.forEach(ds => {
-    const dt = todos.filter(t => t.date === ds);
-    if (!dt.length) return;
-    const done = dt.filter(t => t.status==='done').length;
-    const wip  = dt.filter(t => t.status==='wip').length;
-    const todo = dt.filter(t => t.status==='todo').length;
-    const pct  = Math.round(done/dt.length*100);
-    summaryRows.push([ds, dt.length, done, wip, todo, pct]);
-  });
+  // 요약 시트 (연간은 월별로 집계)
+  const summaryRows = [[mode === 'year' ? '월' : '날짜', '전체', '완료', '진행 중', '미완료', '완료율(%)']];
+  const dailyLog = _dailyLog || [];
+  if (mode === 'year') {
+    const y = now.getFullYear();
+    for (let m = 0; m < 12; m++) {
+      const prefix = `${y}-${p2(m+1)}`;
+      const mt = todos.filter(t => t.date && t.date.startsWith(prefix));
+      const dc = dailyLog.filter(l => l.date && l.date.startsWith(prefix)).length;
+      if (!mt.length && !dc) continue;
+      const done = mt.filter(t => t.status==='done').length + dc;
+      const wip  = mt.filter(t => t.status==='wip').length;
+      const todo = mt.filter(t => t.status==='todo').length;
+      const total = mt.length + dc;
+      summaryRows.push([`${m+1}월`, total, done, wip, todo, total ? Math.round(done/total*100) : 0]);
+    }
+  } else {
+    days.forEach(ds => {
+      const dt = todos.filter(t => t.date === ds);
+      const dc = dailyLog.filter(l => l.date === ds).length;
+      if (!dt.length && !dc) return;
+      const done = dt.filter(t => t.status==='done').length + dc;
+      const wip  = dt.filter(t => t.status==='wip').length;
+      const todo = dt.filter(t => t.status==='todo').length;
+      const total = dt.length + dc;
+      summaryRows.push([ds, total, done, wip, todo, total ? Math.round(done/total*100) : 0]);
+    });
+  }
 
   // 상세 시트
   const detailRows = [['날짜', '시간', '내용', '상태', '우선순위']];
@@ -2091,6 +2218,10 @@ function exportExcel() {
       STATUS_KR[t.status] || t.status,
       t.priority === 'high' ? '높음' : t.priority === 'low' ? '낮음' : '보통'
     ]);
+  });
+  // 일일 업무 완료 기록
+  dailyLog.filter(l => days.includes(l.date)).forEach(l => {
+    detailRows.push([l.date, '', `[일일] ${l.text}`, '완료', '-']);
   });
 
   // 고객사별 시트
@@ -2109,7 +2240,7 @@ function exportExcel() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), '상세');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(clientRows), '고객사별');
 
-  const label = isWeek ? '주간' : '월간';
+  const label = mode === 'day' ? '오늘' : mode === 'week' ? '주간' : mode === 'year' ? '연간' : '월간';
   const dateStr = `${now.getFullYear()}${p2(now.getMonth()+1)}${p2(now.getDate())}`;
   XLSX.writeFile(wb, `업무리포트_${label}_${dateStr}.xlsx`);
   showToast('📊 Excel 파일이 다운로드됐어요');

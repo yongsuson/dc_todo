@@ -235,11 +235,17 @@
       <div class="page-view" id="page-report">
         <div class="report-toolbar">
           <div class="report-tabs">
-            <button class="report-tab active" id="tab-week" onclick="switchReportTab('week')">
+            <button class="report-tab active" id="tab-day" onclick="switchReportTab('day')">
+              <i class="ti ti-calendar-due"></i> 일일
+            </button>
+            <button class="report-tab" id="tab-week" onclick="switchReportTab('week')">
               <i class="ti ti-calendar-week"></i> 주간
             </button>
             <button class="report-tab" id="tab-month" onclick="switchReportTab('month')">
               <i class="ti ti-calendar-month"></i> 월간
+            </button>
+            <button class="report-tab" id="tab-year" onclick="switchReportTab('year')">
+              <i class="ti ti-calendar-stats"></i> 연간
             </button>
             <button class="report-tab" id="tab-client" onclick="switchReportTab('client')">
               <i class="ti ti-building"></i> 고객사별
@@ -389,6 +395,13 @@
       <div class="form-row">
         <label class="form-label">내용 <span class="required">*</span></label>
         <textarea class="form-input form-textarea" id="todo-edit-text" rows="3"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="form-label">날짜 / 시간</label>
+        <div style="display:flex;gap:8px">
+          <input type="date" class="form-input" id="todo-edit-date" style="flex:1">
+          <input type="time" class="form-input" id="todo-edit-time" style="flex:1">
+        </div>
       </div>
     </div>
     <div class="modal-footer">
